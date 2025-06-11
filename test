@@ -1,9 +1,6 @@
-Python 3.9.6 (default, Apr 30 2025, 02:07:17) 
-[Clang 17.0.0 (clang-1700.0.13.5)] on darwin
-Type "help", "copyright", "credits" or "license" for more information.
->>> from purchase import agent
 Traceback (most recent call last):
-  File "<stdin>", line 1, in <module>
-  File "/Users/sangitadey/multi-agent-adk/purchase/agent.py", line 2, in <module>
-    from google.adk.agents import Agent
-ModuleNotFoundError: No module named 'google'
+  File "<python-input-0>", line 1, in <module>
+    from purchase import agent
+  File "/Users/sangitadey/multi-agent-adk/purchase/agent.py", line 3, in <module>
+    from google.adk.tools import tool
+ImportError: cannot import name 'tool' from 'google.adk.tools' (/Users/sangitadey/multi-agent-adk/venv/lib/python3.13/site-packages/google/adk/tools/__init__.py)
