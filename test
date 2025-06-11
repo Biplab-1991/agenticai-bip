@@ -1,5 +1,50 @@
-GOOGLE_GENAI_USE_VERTEXAI=TRUE
-GOOGLE_CLOUD_PROJECT=YOUR_GOOGLE_CLOUD_PROJECT_ID
-GOOGLE_CLOUD_LOCATION=YOUR_GOOGLE_CLOUD_LOCATION
-# Specific port for this agent when running `adk web`
-PORT=8001
+# multi-agent-shop/burger_seller/agent.py
+from google.adk.agents import Agent
+from google.adk.tools import tool
+from google.adk.invocation_context import InvocationContext # Always include for tool context
+
+class BurgerSeller:
+    def __init__(self):
+        self.menu = {
+            "classic cheeseburger": 10.00,
+            "spicy cajun burger": 12.50,
+            "veggie burger": 9.00
+        }
+
+    @tool
+    def get_burger_menu(self, context: InvocationContext) -> str:
+        """Retrieves the menu for burgers.
+
+        Args:
+            context: The invocation context.
+        """
+        menu_items = [f"{item}: ${price:.2f}" for item, price in self.menu.items()]
+        return "Our burger menu:\n" + "\n".join(menu_items)
+
+    @tool
+    def place_burger_order(self, item: str, quantity: int, context: InvocationContext) -> str:
+        """Places an order for a specified burger item and quantity.
+
+        Args:
+            item: The name of the burger item.
+            quantity: The number of items to order.
+            context: The invocation context.
+        """
+        item_lower = item.lower()
+        if item_lower in self.menu:
+            cost = self.menu[item_lower] * quantity
+            return f"Order placed for {quantity} {item}(s). Total: ${cost:.2f}. Your order will be ready soon!"
+        else:
+            return f"Sorry, '{item}' is not on our burger menu."
+
+# Instantiate the ADK Agent. Name should match the directory name.
+agent = Agent(
+    name="burger_seller",
+    model="gemini-1.5-flash", # Use a suitable model available in your region
+    description="An agent that can provide burger menus and take burger orders.",
+    instruction="You are a helpful burger seller agent. Provide menu items and take orders.",
+    tools=[
+        BurgerSeller().get_burger_menu,
+        BurgerSeller().place_burger_order
+    ]
+)
