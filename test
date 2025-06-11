@@ -1,50 +1,94 @@
-# multi-agent-shop/pizza_seller/agent.py
+# multi-agent-shop/purchasing_concierge/agent.py
 from google.adk.agents import Agent
 from google.adk.tools import tool
+from google.adk.a2a.client import RemoteAgentClient
 from google.adk.invocation_context import InvocationContext
+from typing import Dict, Any
 
-class PizzaSeller:
+class PurchasingConciergeTools:
     def __init__(self):
-        self.menu = {
-            "pepperoni pizza": 15.00,
-            "margherita pizza": 13.00,
-            "vegetarian pizza": 14.00
-        }
+        # IMPORTANT: These URLs *must* match the ports configured in the seller agents' .env files
+        # and where they are actually running.
+        self.burger_seller_url = "http://localhost:8001"
+        self.pizza_seller_url = "http://localhost:8002"
+        self.burger_client = RemoteAgentClient(self.burger_seller_url)
+        self.pizza_client = RemoteAgentClient(self.pizza_seller_url)
 
     @tool
-    def get_pizza_menu(self, context: InvocationContext) -> str:
-        """Retrieves the menu for pizzas.
-
+    async def get_menu_from_seller(self, seller_type: str, context: InvocationContext) -> str:
+        """
+        Retrieves the menu from a specified seller (burger or pizza).
         Args:
+            seller_type: 'burger' or 'pizza'
             context: The invocation context.
         """
-        menu_items = [f"{item}: ${price:.2f}" for item, price in self.menu.items()]
-        return "Our pizza menu:\n" + "\n".join(menu_items)
-
-    @tool
-    def place_pizza_order(self, item: str, quantity: int, context: InvocationContext) -> str:
-        """Places an order for a specified pizza item and quantity.
-
-        Args:
-            item: The name of the pizza item.
-            quantity: The number of items to order.
-            context: The invocation context.
-        """
-        item_lower = item.lower()
-        if item_lower in self.menu:
-            cost = self.menu[item_lower] * quantity
-            return f"Order placed for {quantity} {item}(s). Total: ${cost:.2f}. Enjoy your pizza!"
+        seller_type_lower = seller_type.lower()
+        if seller_type_lower == "burger":
+            client = self.burger_client
+            tool_name = "get_burger_menu"
+        elif seller_type_lower == "pizza":
+            client = self.pizza_client
+            tool_name = "get_pizza_menu"
         else:
-            return f"Sorry, '{item}' is not on our pizza menu."
+            return f"Unknown seller type: {seller_type}. Please choose 'burger' or 'pizza'."
+
+        try:
+            # Call the remote agent using A2A protocol
+            response = await client.run_tool(
+                tool_name=tool_name,
+                input_args={}, # No specific args for get_menu
+                context=context # Pass the invocation context for traceability
+            )
+            # A2A responses return a dict, often with 'report' key for human-readable output
+            return response.get("report", f"Failed to get menu from {seller_type}.")
+        except Exception as e:
+            return f"Error contacting {seller_type} seller: {e}"
+
+    @tool
+    async def place_order_with_seller(self, seller_type: str, item: str, quantity: int, context: InvocationContext) -> str:
+        """
+        Places an order with a specified seller (burger or pizza).
+        Args:
+            seller_type: 'burger' or 'pizza'
+            item: The item to order.
+            quantity: The quantity of the item.
+            context: The invocation context.
+        """
+        seller_type_lower = seller_type.lower()
+        if seller_type_lower == "burger":
+            client = self.burger_client
+            tool_name = "place_burger_order"
+        elif seller_type_lower == "pizza":
+            client = self.pizza_client
+            tool_name = "place_pizza_order"
+        else:
+            return f"Unknown seller type: {seller_type}. Please choose 'burger' or 'pizza'."
+
+        try:
+            # Call the remote agent using A2A protocol
+            response = await client.run_tool(
+                tool_name=tool_name,
+                input_args={"item": item, "quantity": quantity},
+                context=context
+            )
+            return response.get("report", f"Failed to place order with {seller_type}.")
+        except Exception as e:
+            return f"Error contacting {seller_type} seller: {e}"
 
 # Instantiate the ADK Agent. Name should match the directory name.
 agent = Agent(
-    name="pizza_seller",
+    name="purchasing_concierge",
     model="gemini-1.5-flash",
-    description="An agent that can provide pizza menus and take pizza orders.",
-    instruction="You are a helpful pizza seller agent. Provide menu items and take orders.",
+    description="An agent that helps with purchasing by delegating to specialized seller agents.",
+    instruction=(
+        "You are a helpful purchasing concierge. You can get menus and place orders "
+        "for burgers and pizzas by interacting with specialized seller agents. "
+        "When a user asks for a menu, use the 'get_menu_from_seller' tool. "
+        "When a user wants to place an order, use the 'place_order_with_seller' tool. "
+        "Be polite and confirm orders."
+    ),
     tools=[
-        PizzaSeller().get_pizza_menu,
-        PizzaSeller().place_pizza_order
+        PurchasingConciergeTools().get_menu_from_seller,
+        PurchasingConciergeTools().place_order_with_seller
     ]
 )
