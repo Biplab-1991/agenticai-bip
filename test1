@@ -1,14 +1,13 @@
-google-cloud-aiplatform==1.97.0
-langchain==0.3.25
-langchain-community==0.3.25
-langchain-core==0.3.65
-langchain-google-vertexai==2.0.25
-langchain-text-splitters==0.3.8
-langgraph==0.3.34
-langgraph-checkpoint==2.1.0
-langgraph-prebuilt==0.1.8
-langgraph-sdk==0.1.70
-openinference-instrumentation-langchain==0.1.43
-pydantic==2.11.7
-pydantic-settings==2.9.1
-pydantic_core==2.33.2
+def query(self, input_message: str):
+        if self.graph is None:
+            raise RuntimeError("Graph not set up. Call set_up() first.")
+
+        # --- IMPORTANT CHANGE HERE ---
+        # Convert the input string into a dictionary with 'role' and 'content'
+        # This explicitly matches the ValueError's requirement.
+        input_message_as_dict = {"role": "user", "content": input_message}
+
+        print(f"DEBUG: Invoking graph with message dictionary: {input_message_as_dict}")
+        # The 'messages' key must point to a list containing this dictionary.
+        result = self.graph.invoke({"messages": [input_message_as_dict]})
+        return result
