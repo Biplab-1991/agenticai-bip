@@ -1,1 +1,12 @@
-gcloud auth application-default login
+callback_errors
+    callback(message)
+  File "/Users/sangitadey/agent-pub/async_langgraph_pubsub.py", line 78, in _message_callback
+    loop = asyncio.get_event_loop()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/events.py", line 642, in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+RuntimeError: There is no current event loop in thread 'ThreadPoolExecutor-ThreadScheduler_0'.
+Subscriber error for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub: There is no current event loop in thread 'ThreadPoolExecutor-ThreadScheduler_0'.
+Subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub stopped.
+Stopping subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub...
+Subscriber shutdown initiated.
+Application shutting down.
