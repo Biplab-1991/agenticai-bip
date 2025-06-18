@@ -21,4 +21,4 @@ if __name__ == "__main__":
     # This block runs the server when the script is executed directly.
     # It uses 'stdio' transport and defines a specific port for communication.
     print("Starting Weather MCP server on port 8001 (default)...")
-    mcp.run(transport="stdio")
+    mcp.run(transport="stdio") 

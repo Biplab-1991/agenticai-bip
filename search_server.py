@@ -30,4 +30,4 @@ if __name__ == "__main__":
     # It uses 'stdio' transport, which means it communicates over standard input/output.
     # For multiple servers, it's common to run them in separate processes or use HTTP transport.
     #print("Starting Math MCP server on port 8000 (default)...")
-    mcp.run(transport="stdio")
+    mcp.run(transport="stdio") 
