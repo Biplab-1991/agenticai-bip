@@ -1,6 +1,234 @@
-e "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/events.py", line 642, in get_event_loop
-    raise RuntimeError('There is no current event loop in thread %r.'
-RuntimeError: There is no current event loop in thread 'ThreadPoolExecutor-ThreadScheduler_1'.
-Subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub stopped.
-Stopping subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub...
-Error in queue callback worker: Cannot invoke RPC on closed channel!
+import asyncio
+import json
+import operator
+from typing import Annotated, List, TypedDict
+
+from google.cloud import pubsub_v1
+from langchain_core.messages import BaseMessage, HumanMessage
+from langgraph.graph import START, END, StateGraph
+
+# --- Configuration ---
+# IMPORTANT: Replace with your actual Google Cloud Project ID
+PROJECT_ID = "spiritual-verve-461804-h5" # Assuming this is your project ID from the error
+# Pub/Sub Topic and Subscription Names
+AGENT_A_OUTPUT_TOPIC = "agent-a-output"
+AGENT_A_OUTPUT_SUBSCRIPTION = "agent-a-output-sub" # Corrected based on your error message
+
+
+# --- Pub/Sub Helper Classes ---
+
+class AsyncPubSubPublisher:
+    """
+    Asynchronous client for publishing messages to Google Pub/Sub.
+    """
+    def __init__(self, project_id: str):
+        self.project_id = project_id
+        self.publisher = pubsub_v1.PublisherClient()
+
+    async def publish_message(self, topic_id: str, data: bytes, **attributes):
+        """
+        Publishes a message to the specified Pub/Sub topic.
+        Args:
+            topic_id: The ID of the Pub/Sub topic.
+            data: The message payload as bytes.
+            attributes: Optional key-value attributes for the message.
+        """
+        topic_path = self.publisher.topic_path(self.project_id, topic_id)
+        future = self.publisher.publish(topic_path, data, **attributes)
+
+        try:
+            await asyncio.to_thread(future.result)
+            print(f"[{topic_id}] Published message. Message ID: {future.result()}")
+        except Exception as e:
+            print(f"[{topic_id}] Failed to publish message: {e}")
+            raise # Re-raise to signal failure
+
+class AsyncPubSubSubscriber:
+    """
+    Asynchronous client for subscribing to messages from Google Pub/Sub.
+    Handles message reception and dispatches to a callback function.
+    """
+    def __init__(self, project_id: str, subscription_id: str, callback_fn, loop: asyncio.AbstractEventLoop):
+        self.project_id = project_id
+        self.subscription_id = subscription_id
+        self.subscriber = pubsub_v1.SubscriberClient()
+        self.subscription_path = self.subscriber.subscription_path(self.project_id, self.subscription_id)
+        self.callback_fn = callback_fn
+        self.streaming_pull_future = None
+        self.loop = loop # Store the event loop passed from the main thread
+
+    def _message_callback(self, message: pubsub_v1.subscriber.message.Message):
+        """
+        Internal callback for Pub/Sub messages.
+        This runs in a separate thread managed by the Pub/Sub client.
+        It dispatches the message to the user-defined async callback on the main event loop.
+        """
+        try:
+            # Use the stored event loop from the main thread to schedule the coroutine
+            asyncio.run_coroutine_threadsafe(
+                self.callback_fn(message.data.decode('utf-8'), dict(message.attributes)), self.loop
+            )
+            message.ack() # Acknowledge the message once it's scheduled for processing
+        except Exception as e:
+            print(f"Error in _message_callback (message not acknowledged): {e}")
+            # Consider nack() or specific error handling if message processing failed here
+
+    async def start_listening(self):
+        """Starts listening for messages on the configured subscription."""
+        print(f"Listening for messages on {self.subscription_path}...")
+        self.streaming_pull_future = self.subscriber.subscribe(
+            self.subscription_path, callback=self._message_callback
+        )
+        try:
+            await asyncio.to_thread(self.streaming_pull_future.result)
+        except asyncio.CancelledError:
+            print(f"Subscriber for {self.subscription_path} cancelled.")
+        except Exception as e:
+            print(f"Subscriber error for {self.subscription_path}: {e}")
+        finally:
+            self.streaming_pull_future.cancel()
+            await asyncio.to_thread(self.subscriber.close)
+            print(f"Subscriber for {self.subscription_path} stopped.")
+
+    async def stop_listening(self):
+        """Stops the Pub/Sub subscriber."""
+        if self.streaming_pull_future:
+            print(f"Stopping subscriber for {self.subscription_path}...")
+            self.streaming_pull_future.cancel()
+            await asyncio.sleep(2) # Give it a moment to shut down gracefully
+            print("Subscriber shutdown initiated.")
+
+
+# --- LangGraph Definition ---
+
+class AgentState(TypedDict):
+    messages: Annotated[List[BaseMessage], operator.add]
+    workflow_step: str
+    input_data: dict
+
+pubsub_publisher = AsyncPubSubPublisher(PROJECT_ID)
+
+async def agent_a_node(state: AgentState):
+    print(f"\n--- Agent A ({state['workflow_step']}) ---")
+    current_input = state['input_data'].get('content', 'No specific input.')
+    print(f"Agent A received input: '{current_input}'")
+
+    response_content = f"Agent A processed '{current_input}' and is ready for next step."
+    new_message = HumanMessage(content=response_content, name="AgentA")
+
+    message_payload = json.dumps({
+        "workflow_id": "unique_workflow_id_123",
+        "from_agent": "AgentA",
+        "processed_data": response_content,
+        "next_step_hint": "proceed_to_agent_b"
+    }).encode("utf-8")
+
+    await pubsub_publisher.publish_message(AGENT_A_OUTPUT_TOPIC, message_payload)
+
+    return {
+        "messages": [new_message],
+        "workflow_step": "agent_a_completed",
+        "input_data": {}
+    }
+
+async def agent_b_node(state: AgentState):
+    print(f"\n--- Agent B ({state['workflow_step']}) ---")
+    last_message = state['messages'][-1].content if state['messages'] else "No prior message."
+    print(f"Agent B received state, last message: '{last_message}'")
+    print(f"Agent B's internal input_data: {state['input_data']}")
+
+    processed_content = state['input_data'].get('processed_data', 'No specific data for B.')
+    response_content = f"Agent B processed '{processed_content}' and completed its task."
+    new_message = HumanMessage(content=response_content, name="AgentB")
+
+    return {
+        "messages": [new_message],
+        "workflow_step": "agent_b_completed"
+    }
+
+workflow = StateGraph(AgentState)
+workflow.add_node("agent_a", agent_a_node)
+workflow.add_node("agent_b", agent_b_node)
+workflow.add_edge(START, "agent_a")
+workflow.add_edge("agent_a", "agent_b")
+workflow.add_edge("agent_b", END)
+app = workflow.compile()
+
+# --- Pub/Sub Callback to Trigger/Resume LangGraph ---
+
+async def pubsub_langgraph_callback(message_data: str, attributes: dict):
+    print(f"\n--- Pub/Sub Message Received ---")
+    print(f"Message Data: {message_data}")
+    print(f"Attributes: {attributes}")
+
+    try:
+        parsed_message = json.loads(message_data)
+        from_agent = parsed_message.get("from_agent", "unknown")
+        processed_data = parsed_message.get("processed_data", "")
+        next_step_hint = parsed_message.get("next_step_hint", "")
+        workflow_id = parsed_message.get("workflow_id", "default_workflow")
+
+        initial_state_for_graph = {
+            "messages": [HumanMessage(content=f"Received from Pub/Sub: {processed_data}", name="PubSubListener")],
+            "workflow_step": "pubsub_triggered",
+            "input_data": parsed_message
+        }
+
+        print(f"Invoking LangGraph based on Pub/Sub message. Next hint: {next_step_hint}")
+
+        final_state = await app.ainvoke(initial_state_for_graph)
+        print("\n--- LangGraph Execution Finished (from Pub/Sub trigger) ---")
+        print("Final LangGraph state:", final_state)
+
+    except json.JSONDecodeError:
+        print(f"Error: Could not parse message data as JSON: {message_data}")
+    except Exception as e:
+        print(f"An unexpected error occurred in Pub/Sub callback: {e}")
+
+# --- Main Application Execution ---
+
+async def main():
+    print("Starting asynchronous LangGraph agents with Pub/Sub...")
+
+    # GET THE CURRENT EVENT LOOP IN THE MAIN THREAD
+    main_loop = asyncio.get_running_loop()
+
+    # Pass the main_loop to the AsyncPubSubSubscriber
+    subscriber = AsyncPubSubSubscriber(
+        PROJECT_ID, AGENT_A_OUTPUT_SUBSCRIPTION, pubsub_langgraph_callback, main_loop
+    )
+
+    subscriber_task = asyncio.create_task(subscriber.start_listening())
+
+    initial_trigger_input = {
+        "messages": [HumanMessage(content="Initial request to start workflow.")],
+        "workflow_step": "initial_trigger",
+        "input_data": {"initial_request": "Process this document"}
+    }
+
+    print("\n--- Initiating first LangGraph execution (Agent A) ---")
+    try:
+        initial_graph_run_result = await app.ainvoke(initial_trigger_input)
+        print("\n--- Initial LangGraph execution finished (Agent A published to Pub/Sub) ---")
+        print("Final state after initial run:", initial_graph_run_result)
+    except Exception as e:
+        print(f"Error during initial LangGraph run: {e}")
+
+    print("\nMain loop running. Waiting for Pub/Sub messages...")
+    try:
+        await subscriber_task
+    except asyncio.CancelledError:
+        print("Main application loop cancelled.")
+    finally:
+        await subscriber.stop_listening()
+        print("Application shutting down.")
+
+if __name__ == "__main__":
+    print("Setting up and running the async agents...")
+    try:
+        # asyncio.run() sets up and tears down the event loop for you
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nApplication stopped by user (Ctrl+C).")
+    except Exception as e:
+        print(f"An error occurred during application startup/execution: {e}")
