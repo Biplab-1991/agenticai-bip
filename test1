@@ -1,3 +1,52 @@
-raise ValueError(msg) from e
-ValueError: Message dict must contain 'role' and 'content' keys, got {'messages': [HumanMessage(content='What are the details for a laptop?', additional_kwargs={}, response_metadata={})]}
-For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/MESSAGE_COERCION_FAILURE 
+# ... (rest of your code remains the same) ...
+
+class SimpleLangGraphApp:
+    def __init__(self, project: str, location: str) -> None:
+        self.project_id = project
+        self.location = location
+        self.graph = None # Initialize graph to None
+
+    def set_up(self) -> None:
+        # ... (same set_up method) ...
+        model = ChatVertexAI(model="gemini-2.0-flash")
+        builder = MessageGraph()
+        model_with_tools = model.bind_tools([get_product_details])
+
+        builder.add_node("agent", model_with_tools)
+        tool_node = ToolNode([get_product_details])
+        builder.add_node("call_tool", tool_node)
+
+        def should_continue(state: list[BaseMessage]):
+            last_message = state[-1]
+            if last_message.tool_calls:
+                return "continue_tool"
+            return "end"
+
+        builder.add_conditional_edges(
+            "agent",
+            should_continue,
+            {
+                "continue_tool": "call_tool",
+                "end": END
+            }
+        )
+        builder.add_edge("call_tool", "agent")
+
+        builder.set_entry_point("agent")
+        self.graph = builder.compile()
+
+    def query(self, input_message: str):
+        if self.graph is None:
+            raise RuntimeError("Graph not set up. Call set_up() first.")
+
+        # --- MODIFICATION START ---
+        # Convert HumanMessage object to a dictionary with 'role' and 'content'
+        # HumanMessage objects have .type and .content attributes
+        message_dict = {"role": "user", "content": input_message}
+        # --- MODIFICATION END ---
+
+        print(f"DEBUG: Invoking graph with message dict: {message_dict}") # Added for visibility
+        result = self.graph.invoke({"messages": [message_dict]})
+        return result
+
+# ... (rest of your code, including main, run_local_app, deploy_agent_to_cloud) ...
