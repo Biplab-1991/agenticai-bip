@@ -1,13 +1,12 @@
-# ... (rest of your code remains the same) ...
+# ... (imports and other code) ...
 
 class SimpleLangGraphApp:
     def __init__(self, project: str, location: str) -> None:
         self.project_id = project
         self.location = location
-        self.graph = None # Initialize graph to None
+        self.graph = None
 
     def set_up(self) -> None:
-        # ... (same set_up method) ...
         model = ChatVertexAI(model="gemini-2.0-flash")
         builder = MessageGraph()
         model_with_tools = model.bind_tools([get_product_details])
@@ -17,6 +16,7 @@ class SimpleLangGraphApp:
         builder.add_node("call_tool", tool_node)
 
         def should_continue(state: list[BaseMessage]):
+            # The state is a list of BaseMessage objects, which is correct
             last_message = state[-1]
             if last_message.tool_calls:
                 return "continue_tool"
@@ -39,14 +39,14 @@ class SimpleLangGraphApp:
         if self.graph is None:
             raise RuntimeError("Graph not set up. Call set_up() first.")
 
-        # --- MODIFICATION START ---
-        # Convert HumanMessage object to a dictionary with 'role' and 'content'
-        # HumanMessage objects have .type and .content attributes
-        message_dict = {"role": "user", "content": input_message}
-        # --- MODIFICATION END ---
+        # --- REVERTING THIS PART TO ORIGINAL, AS MessageGraph should handle HumanMessage ---
+        # The graph expects a dictionary with a 'messages' key,
+        # and the value of 'messages' should be a list of BaseMessage objects.
+        # HumanMessage is a BaseMessage.
+        input_messages = [HumanMessage(content=input_message)]
 
-        print(f"DEBUG: Invoking graph with message dict: {message_dict}") # Added for visibility
-        result = self.graph.invoke({"messages": [message_dict]})
+        print(f"DEBUG: Invoking graph with input_messages: {input_messages}")
+        result = self.graph.invoke({"messages": input_messages}) # Pass the list of HumanMessage objects directly
         return result
 
-# ... (rest of your code, including main, run_local_app, deploy_agent_to_cloud) ...
+# ... (rest of your code remains the same) ...
