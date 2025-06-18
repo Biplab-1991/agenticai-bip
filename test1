@@ -1,13 +1,3 @@
-def query(self, input_message: str):
-        if self.graph is None:
-            raise RuntimeError("Graph not set up. Call set_up() first.")
-
-        # --- IMPORTANT CHANGE HERE ---
-        # Convert the input string into a dictionary with 'role' and 'content'
-        # This explicitly matches the ValueError's requirement.
-        input_message_as_dict = {"role": "user", "content": input_message}
-
-        print(f"DEBUG: Invoking graph with message dictionary: {input_message_as_dict}")
-        # The 'messages' key must point to a list containing this dictionary.
-        result = self.graph.invoke({"messages": [input_message_as_dict]})
-        return result
+ERROR: Failed to deploy agent. Please check your configuration, permissions, and ensure the staging bucket exists and is accessible.
+Error details: _method() takes 1 positional argument but 2 were given
+Common issues: Incorrect PROJECT_ID, STAGING_BUCKET, or missing IAM permissions (e.g., roles/aiplatform.admin, roles/storage.admin).
