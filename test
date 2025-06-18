@@ -71,5 +71,19 @@ The ListeningAgent successfully received the data that originated from the Pub/S
 It then processed the data and completed its task.
 ListeningAgent workflow for workflow_XYZ_456 completed. Final state:...
 
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Why You Might Not Have Seen Data in the GCP Console/CLI
+The reason you likely didn't see the data when manually checking the Pub/Sub console or using gcloud pull is because your Python subscriber is so efficient that it's consuming and acknowledging the messages almost instantaneously!
+
+As soon as the message arrives in the subscription, your running Python script's AsyncPubSubSubscriber picks it up, processes it, acknowledges it, and then the message is removed from the subscription's backlog. There's no window for you to see it lingering there.
+
+If you still want to manually verify a message sitting in Pub/Sub:
+
+Stop your Python script (Ctrl+C).
+Run your Python script just once (or the part that triggers the PublishingAgent). This will send one message to Pub/Sub.
+Immediately go to the Google Cloud Console (Pub/Sub > Subscriptions > agent-a-output-sub > Messages tab) and click Pull. Or run the gcloud pubsub subscriptions pull command. You should then see that single message.
+Remember to restart your Python script afterwards to continue the automated processing.
+
 The entire workflow, from publishing to listening and processing, completed successfully.
 
