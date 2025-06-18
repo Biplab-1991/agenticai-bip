@@ -1,3 +1,4 @@
+#pip install langchain_core langgraph google-cloud-pubsub
 import asyncio
 import json
 import operator
@@ -6,6 +7,8 @@ from typing import Annotated, List, TypedDict
 from google.cloud import pubsub_v1
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph import START, END, StateGraph
+
+
 
 # --- Configuration ---
 # IMPORTANT: Replace with your actual Google Cloud Project ID
