@@ -1,13 +1,54 @@
---- Triggering PublishingAgent workflow ---
+# ... (rest of your code remains the same) ...
 
---- PublishingAgent (initial_request) ---
-PublishingAgent received initial request: 'Process financial report 2025-Q1.'
-Listening for messages on projects/spiritual-verve-461804-h5/subscriptions/agent-b-input-sub...
-[agent-a-output] Published message. Message ID: 15425767397494963
-PublishingAgent finished its immediate task and published to Pub/Sub.
+async def main():
+    print("Starting asynchronous LangGraph agents with explicit Pub/Sub integration...")
 
---- PublishingAgent workflow completed and published to Pub/Sub ---
-Final state of PublishingAgent workflow:
-{'messages': [HumanMessage(content='Process financial report 2025-Q1.', additional_kwargs={}, response_metadata={}), HumanMessage(content="Document 'Process financial re...' processed. Summary generated.", additional_kwargs={}, response_metadata={}, name='PublishingAgent')], 'last_pubsub_message': {}, 'workflow_status': 'published_to_pubsub'}
+    main_loop = asyncio.get_running_loop()
 
-Main application running, waiting for Pub/Sub messages to activate ListeningAgent...
+    pubsub_subscriber = AsyncPubSubSubscriber(
+        PROJECT_ID, LISTENING_AGENT_INPUT_SUBSCRIPTION, pubsub_trigger_listening_agent_callback, main_loop
+    )
+
+    # Start the subscriber task.
+    subscriber_task = asyncio.create_task(pubsub_subscriber.start_listening())
+
+    # --- CRITICAL CHANGE HERE ---
+    # Give the subscriber a moment to establish its connection and start listening.
+    # A small delay (e.g., 2-5 seconds) is usually sufficient for local testing.
+    # In a real production system, you might use more robust health checks or
+    # a readiness probe, but for a simple script, a small sleep works.
+    print("Giving subscriber a moment to warm up...")
+    await asyncio.sleep(5) # Wait for 5 seconds
+
+    # --- Step 1: Trigger the PublishingAgent ---
+    print("\n--- Triggering PublishingAgent workflow ---")
+    initial_publishing_input = {
+        "messages": [HumanMessage(content="Process financial report 2025-Q1.")],
+        "workflow_status": "initial_request",
+        "last_pubsub_message": {}
+    }
+    try:
+        final_state_publishing_agent = await publishing_app.ainvoke(initial_publishing_input)
+        print("\n--- PublishingAgent workflow completed and published to Pub/Sub ---")
+        print(f"Final state of PublishingAgent workflow:\n{final_state_publishing_agent}")
+    except Exception as e:
+        print(f"ERROR: PublishingAgent workflow failed: {e}")
+
+    print("\nMain application running, waiting for Pub/Sub messages to activate ListeningAgent...")
+
+    try:
+        await subscriber_task
+    except asyncio.CancelledError:
+        print("Main application loop cancelled.")
+    finally:
+        await pubsub_subscriber.stop_listening()
+        print("Application shutting down.")
+
+if __name__ == "__main__":
+    print("Setting up and running the async agents...")
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nApplication stopped by user (Ctrl+C).")
+    except Exception as e:
+        print(f"An unexpected error occurred during application execution: {e}")
