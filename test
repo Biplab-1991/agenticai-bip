@@ -1,54 +1,43 @@
-# ... (rest of your code remains the same) ...
+/Users/sangitadey/agent-pub/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/sangitadey/agent-pub/.venv/lib/python3.9/site-packages/google/auth/_default.py:76: UserWarning: Your application has authenticated using end user credentials from Google Cloud SDK without a quota project. You might receive a "quota exceeded" or "API not enabled" error. See the following page for troubleshooting: https://cloud.google.com/docs/authentication/adc-troubleshooting/user-creds. 
+  warnings.warn(_CLOUD_SDK_CREDENTIALS_WARNING)
+Setting up and running the async agents...
+Starting asynchronous LangGraph agents with explicit Pub/Sub integration...
+/Users/sangitadey/agent-pub/.venv/lib/python3.9/site-packages/google/auth/_default.py:76: UserWarning: Your application has authenticated using end user credentials from Google Cloud SDK without a quota project. You might receive a "quota exceeded" or "API not enabled" error. See the following page for troubleshooting: https://cloud.google.com/docs/authentication/adc-troubleshooting/user-creds. 
+  warnings.warn(_CLOUD_SDK_CREDENTIALS_WARNING)
+Giving subscriber a moment to warm up...
+Listening for messages on projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub...
 
-async def main():
-    print("Starting asynchronous LangGraph agents with explicit Pub/Sub integration...")
+--- Triggering PublishingAgent workflow ---
 
-    main_loop = asyncio.get_running_loop()
+--- PublishingAgent (initial_request) ---
+PublishingAgent received initial request: 'Process financial report 2025-Q1.'
+[agent-a-output] Published message. Message ID: 15425885580790768
+PublishingAgent finished its immediate task and published to Pub/Sub.
 
-    pubsub_subscriber = AsyncPubSubSubscriber(
-        PROJECT_ID, LISTENING_AGENT_INPUT_SUBSCRIPTION, pubsub_trigger_listening_agent_callback, main_loop
-    )
+--- PublishingAgent workflow completed and published to Pub/Sub ---
+Final state of PublishingAgent workflow:
+{'messages': [HumanMessage(content='Process financial report 2025-Q1.', additional_kwargs={}, response_metadata={}), HumanMessage(content="Document 'Process financial re...' processed. Summary generated.", additional_kwargs={}, response_metadata={}, name='PublishingAgent')], 'last_pubsub_message': {}, 'workflow_status': 'published_to_pubsub'}
 
-    # Start the subscriber task.
-    subscriber_task = asyncio.create_task(pubsub_subscriber.start_listening())
+Main application running, waiting for Pub/Sub messages to activate ListeningAgent...
 
-    # --- CRITICAL CHANGE HERE ---
-    # Give the subscriber a moment to establish its connection and start listening.
-    # A small delay (e.g., 2-5 seconds) is usually sufficient for local testing.
-    # In a real production system, you might use more robust health checks or
-    # a readiness probe, but for a simple script, a small sleep works.
-    print("Giving subscriber a moment to warm up...")
-    await asyncio.sleep(5) # Wait for 5 seconds
+--- Pub/Sub Listener (Triggering ListeningAgent) ---
+Received raw message data: {"workflow_id": "workflow_XYZ_456", "origin_agent": "PublishingAgent", "processed_result": "Document 'Process financial re...' processed. Summary generated.", "next_action": "analyze_summary"}
+Received attributes: {}
+Parsed payload for workflow ID: workflow_XYZ_456
+Invoking ListeningAgent workflow for workflow ID: workflow_XYZ_456
 
-    # --- Step 1: Trigger the PublishingAgent ---
-    print("\n--- Triggering PublishingAgent workflow ---")
-    initial_publishing_input = {
-        "messages": [HumanMessage(content="Process financial report 2025-Q1.")],
-        "workflow_status": "initial_request",
-        "last_pubsub_message": {}
-    }
-    try:
-        final_state_publishing_agent = await publishing_app.ainvoke(initial_publishing_input)
-        print("\n--- PublishingAgent workflow completed and published to Pub/Sub ---")
-        print(f"Final state of PublishingAgent workflow:\n{final_state_publishing_agent}")
-    except Exception as e:
-        print(f"ERROR: PublishingAgent workflow failed: {e}")
+--- ListeningAgent (triggered_by_pubsub) ---
+ListeningAgent received data from 'PublishingAgent' via Pub/Sub: 'Document 'Process financial re...' processed. Summary generated.'
+Suggested next action: 'analyze_summary'
+ListeningAgent completed its processing.
+ListeningAgent workflow for workflow_XYZ_456 completed. Final state:
+{'messages': [HumanMessage(content='Pub/Sub message received for workflow workflow_XYZ_456', additional_kwargs={}, response_metadata={}, name='PubSubTrigger'), HumanMessage(content="ListeningAgent performed analysis on 'Document 'Process financial re...' processed. Summary generated.'. Confirmed action: analyze_summary.", additional_kwargs={}, response_metadata={}, name='ListeningAgent')], 'last_pubsub_message': {}, 'workflow_status': 'listening_agent_completed'}
+^[[1;2B^[[1;2B^CSubscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub cancelled.
+Subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub stopped.
+Stopping subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub...
+Subscriber shutdown initiated.
+Application shutting down.
 
-    print("\nMain application running, waiting for Pub/Sub messages to activate ListeningAgent...")
-
-    try:
-        await subscriber_task
-    except asyncio.CancelledError:
-        print("Main application loop cancelled.")
-    finally:
-        await pubsub_subscriber.stop_listening()
-        print("Application shutting down.")
-
-if __name__ == "__main__":
-    print("Setting up and running the async agents...")
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nApplication stopped by user (Ctrl+C).")
-    except Exception as e:
-        print(f"An unexpected error occurred during application execution: {e}")
+Application stopped by user (Ctrl+C).
