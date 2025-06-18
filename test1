@@ -1,52 +1,20 @@
 # ... (imports and other code) ...
 
 class SimpleLangGraphApp:
-    def __init__(self, project: str, location: str) -> None:
-        self.project_id = project
-        self.location = location
-        self.graph = None
-
-    def set_up(self) -> None:
-        model = ChatVertexAI(model="gemini-2.0-flash")
-        builder = MessageGraph()
-        model_with_tools = model.bind_tools([get_product_details])
-
-        builder.add_node("agent", model_with_tools)
-        tool_node = ToolNode([get_product_details])
-        builder.add_node("call_tool", tool_node)
-
-        def should_continue(state: list[BaseMessage]):
-            # The state is a list of BaseMessage objects, which is correct
-            last_message = state[-1]
-            if last_message.tool_calls:
-                return "continue_tool"
-            return "end"
-
-        builder.add_conditional_edges(
-            "agent",
-            should_continue,
-            {
-                "continue_tool": "call_tool",
-                "end": END
-            }
-        )
-        builder.add_edge("call_tool", "agent")
-
-        builder.set_entry_point("agent")
-        self.graph = builder.compile()
+    # ... (init and set_up methods are the same as before) ...
 
     def query(self, input_message: str):
         if self.graph is None:
             raise RuntimeError("Graph not set up. Call set_up() first.")
 
-        # --- REVERTING THIS PART TO ORIGINAL, AS MessageGraph should handle HumanMessage ---
-        # The graph expects a dictionary with a 'messages' key,
-        # and the value of 'messages' should be a list of BaseMessage objects.
-        # HumanMessage is a BaseMessage.
-        input_messages = [HumanMessage(content=input_message)]
+        # --- FALLBACK MODIFICATION (if previous attempt failed) ---
+        # Convert HumanMessage conceptual message into the required dict format
+        # This will satisfy the ValueError if it's happening at the graph's entry point
+        # expecting a plain dict for initial message state.
+        input_message_as_dict = {"role": "user", "content": input_message}
 
-        print(f"DEBUG: Invoking graph with input_messages: {input_messages}")
-        result = self.graph.invoke({"messages": input_messages}) # Pass the list of HumanMessage objects directly
+        print(f"DEBUG: Invoking graph with input_message_as_dict: {input_message_as_dict}")
+        result = self.graph.invoke({"messages": [input_message_as_dict]}) # Pass the list containing the dictionary
         return result
 
-# ... (rest of your code remains the same) ...
+# ... (rest of your code) ...
