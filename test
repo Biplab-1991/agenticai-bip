@@ -1,12 +1,56 @@
-callback_errors
-    callback(message)
-  File "/Users/sangitadey/agent-pub/async_langgraph_pubsub.py", line 78, in _message_callback
-    loop = asyncio.get_event_loop()
-  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/events.py", line 642, in get_event_loop
-    raise RuntimeError('There is no current event loop in thread %r.'
-RuntimeError: There is no current event loop in thread 'ThreadPoolExecutor-ThreadScheduler_0'.
-Subscriber error for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub: There is no current event loop in thread 'ThreadPoolExecutor-ThreadScheduler_0'.
-Subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub stopped.
-Stopping subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub...
-Subscriber shutdown initiated.
-Application shutting down.
+import asyncio
+from google.cloud import pubsub_v1
+
+class AsyncPubSubSubscriber:
+    def __init__(self, project_id: str, subscription_id: str, callback_fn):
+        self.project_id = project_id
+        self.subscription_id = subscription_id
+        self.subscriber = pubsub_v1.SubscriberClient()
+        self.subscription_path = self.subscriber.subscription_path(self.project_id, self.subscription_id)
+        self.callback_fn = callback_fn
+        self.streaming_pull_future = None
+
+    def _message_callback(self, message: pubsub_v1.subscriber.message.Message):
+        """
+        Internal callback for Pub/Sub messages.
+        This runs in a separate thread managed by the Pub/Sub client.
+        It dispatches the message to the user-defined async callback on the main event loop.
+        """
+        loop = asyncio.get_event_loop() # Get the event loop
+        try:
+            # Schedule the user-defined async callback as a task on the main event loop.
+            asyncio.run_coroutine_threadsafe(
+                self.callback_fn(message.data.decode('utf-8'), dict(message.attributes)), loop
+            )
+            message.ack() # Acknowledge the message once it's scheduled for processing
+        except Exception as e:
+            print(f"Error in _message_callback (message not acknowledged): {e}")
+
+    async def start_listening(self):
+        """Starts listening for messages on the configured subscription."""
+        print(f"Listening for messages on {self.subscription_path}...")
+        self.streaming_pull_future = self.subscriber.subscribe(
+            self.subscription_path, callback=self._message_callback
+        )
+        try:
+            # The .result() method of the future will block indefinitely in the background
+            # until the subscriber is cancelled or an error occurs.
+            # We wrap it in asyncio.to_thread to keep the main event loop non-blocked.
+            await asyncio.to_thread(self.streaming_pull_future.result)
+        except asyncio.CancelledError:
+            print(f"Subscriber for {self.subscription_path} cancelled.")
+        except Exception as e:
+            print(f"Subscriber error for {self.subscription_path}: {e}")
+        finally:
+            self.streaming_pull_future.cancel()
+            await asyncio.to_thread(self.subscriber.close)
+            print(f"Subscriber for {self.subscription_path} stopped.")
+
+    async def stop_listening(self):
+        """Stops the Pub/Sub subscriber."""
+        if self.streaming_pull_future:
+            print(f"Stopping subscriber for {self.subscription_path}...")
+            self.streaming_pull_future.cancel()
+            # Give it a moment to shut down gracefully
+            await asyncio.sleep(2) # Or await asyncio.to_thread(self.subscriber.close) directly if it's fast
+            print("Subscriber shutdown initiated.")
