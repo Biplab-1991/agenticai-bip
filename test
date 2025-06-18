@@ -1,7 +1,4 @@
-/Users/sangitadey/agent-pub/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
-  warnings.warn(
-/Users/sangitadey/agent-pub/.venv/lib/python3.9/site-packages/google/auth/_default.py:76: UserWarning: Your application has authenticated using end user credentials from Google Cloud SDK without a quota project. You might receive a "quota exceeded" or "API not enabled" error. See the following page for troubleshooting: https://cloud.google.com/docs/authentication/adc-troubleshooting/user-creds. 
-  warnings.warn(_CLOUD_SDK_CREDENTIALS_WARNING)
+
 Setting up and running the async agents...
 Starting asynchronous LangGraph agents with explicit Pub/Sub integration...
 /Users/sangitadey/agent-pub/.venv/lib/python3.9/site-packages/google/auth/_default.py:76: UserWarning: Your application has authenticated using end user credentials from Google Cloud SDK without a quota project. You might receive a "quota exceeded" or "API not enabled" error. See the following page for troubleshooting: https://cloud.google.com/docs/authentication/adc-troubleshooting/user-creds. 
@@ -34,10 +31,45 @@ Suggested next action: 'analyze_summary'
 ListeningAgent completed its processing.
 ListeningAgent workflow for workflow_XYZ_456 completed. Final state:
 {'messages': [HumanMessage(content='Pub/Sub message received for workflow workflow_XYZ_456', additional_kwargs={}, response_metadata={}, name='PubSubTrigger'), HumanMessage(content="ListeningAgent performed analysis on 'Document 'Process financial re...' processed. Summary generated.'. Confirmed action: analyze_summary.", additional_kwargs={}, response_metadata={}, name='ListeningAgent')], 'last_pubsub_message': {}, 'workflow_status': 'listening_agent_completed'}
-^[[1;2B^[[1;2B^CSubscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub cancelled.
-Subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub stopped.
-Stopping subscriber for projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub...
-Subscriber shutdown initiated.
-Application shutting down.
 
-Application stopped by user (Ctrl+C).
+-----------------------------------------------------------------------------------------------------explaination----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Setting up and running the async agents...
+
+Your script started.
+Giving subscriber a moment to warm up...
+
+The intentional delay allowed your Pub/Sub subscriber to establish its connection.
+Listening for messages on projects/spiritual-verve-461804-h5/subscriptions/agent-a-output-sub...
+
+The AsyncPubSubSubscriber successfully initialized and began listening.
+--- Triggering PublishingAgent workflow ---
+
+Your main function's initial publishing_app.ainvoke() call started the PublishingAgent.
+PublishingAgent received initial request: 'Process financial report 2025-Q1.'
+
+The PublishingAgent executed its logic.
+[agent-a-output] Published message. Message ID: 15425885580790768
+
+Crucially, this confirms that the PublishingAgent successfully sent a message to your agent-a-output Pub/Sub topic! Pub/Sub acknowledged the message and gave it an ID.
+PublishingAgent finished its immediate task and published to Pub/Sub.
+
+The PublishingAgent completed its part of the workflow.
+Main application running, waiting for Pub/Sub messages to activate ListeningAgent...
+
+Your script continued to run, with the AsyncPubSubSubscriber listening in the background.
+--- Pub/Sub Listener (Triggering ListeningAgent) ---
+
+This is the key! This line (and the ones that follow) indicate that the AsyncPubSubSubscriber successfully received the message that the PublishingAgent sent moments before. The message traveled through Pub/Sub and was picked up by your listener.
+It then printed the Received raw message data and Parsed payload.
+Invoking ListeningAgent workflow for workflow ID: workflow_XYZ_456
+
+The pubsub_trigger_listening_agent_callback correctly took the received Pub/Sub message and used it to ainvoke the listening_app, thereby activating your ListeningAgent.
+--- ListeningAgent (triggered_by_pubsub) ---
+
+The ListeningAgent successfully received the data that originated from the Pub/Sub message.
+It then processed the data and completed its task.
+ListeningAgent workflow for workflow_XYZ_456 completed. Final state:...
+
+The entire workflow, from publishing to listening and processing, completed successfully.
+
