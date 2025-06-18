@@ -22,7 +22,7 @@ def draft_section(topic: str, research_notes: str) -> str:
     print(f"\n--- Writing Agent: Drafting section for: '{topic}' ---")
     return f"Draft for '{topic}': {research_notes}\n\n[Further details would be added here.]"
 
-@tool
+@tool 
 def critique_draft(draft: str) -> str:
     """Critiques a draft section and provides suggestions for improvement."""
     print(f"\n--- Editing Agent: Critiquing draft ---")

@@ -24,7 +24,7 @@ class AgentState(TypedDict):
     """
     messages: Annotated[list[BaseMessage], operator.add]
     research_findings: str
-    summary_output: str
+    summary_output: str 
     research_done: bool
 
 # --- 2. Create a Mock LLM (for demonstration) ---
