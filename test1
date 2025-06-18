@@ -1,34 +1,101 @@
-pip install --upgrade --quiet google-cloud-aiplatform[agent_engines,langchain]
+pip install --upgrade --quiet google-cloud-aiplatform[langchain] langchain_google_vertexai langgraph
 
-import vertexaifrom vertexai import agent_enginesimport osfrom typing import Literalfrom langchain_core.messages import BaseMessage, HumanMessagefrom langchain_google_vertexai import ChatVertexAIfrom langgraph.graph import END, MessageGraphfrom langgraph.prebuilt import ToolNodefrom vertexai import agent_engines
+import vertexai
+import os
+from typing import Literal
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_google_vertexai import ChatVertexAI
+from langgraph.graph import END, MessageGraph
+from langgraph.prebuilt import ToolNode
 
-PROJECT_ID = "[your-project-id]"LOCATION = "us-central1" # Or your desired regionSTAGING_BUCKET = "gs://[your-staging-bucket]" # A GCS bucket for stagingvertexai.init(project=PROJECT_ID, location=LOCATION, staging_bucket=STAGING_BUCKET)
+# No need for PROJECT_ID, LOCATION, STAGING_BUCKET for local execution
+# But if you want to use a model like Gemini, you'll still need to initialize vertexai
+# and provide your project ID. The location is also relevant for model availability.
+# Make sure to replace "[your-project-id]" with your actual Google Cloud Project ID.
+PROJECT_ID = "[your-project-id]"
+LOCATION = "us-central1"
 
+# 1. Define your tools
+def get_product_details(product_name: str):
+    """Retrieves details for a given product."""
+    if product_name.lower() == "laptop":
+        return {"name": "Laptop Pro", "price": 1200, "description": "Powerful laptop for professionals."}
+    else:
+        return {"name": product_name, "price": "N/A", "description": "Details not available."}
 
-# 1. Define your toolsdef get_product_details(product_name: str):    """Retrieves details for a given product."""    if product_name.lower() == "laptop":        return {"name": "Laptop Pro", "price": 1200, "description": "Powerful laptop for professionals."}    else:        return {"name": product_name, "price": "N/A", "description": "Details not available."}
+# 2. Create your LangGraph app
+class SimpleLangGraphApp:
+    def __init__(self, project: str, location: str) -> None:
+        self.project_id = project
+        self.location = location
+        self.graph = None # Initialize graph to None
 
-# 2. Create your LangGraph appclass SimpleLangGraphApp:    def __init__(self, project: str, location: str) -> None:        self.project_id = project        self.location = location
+    def set_up(self) -> None:
+        # For local execution, ensure your Google Cloud authentication is set up
+        # (e.g., via `gcloud auth application-default login`)
+        model = ChatVertexAI(model="gemini-2.0-flash")
+        builder = MessageGraph()
+        model_with_tools = model.bind_tools([get_product_details])
 
-    def set_up(self) -> None:        model = ChatVertexAI(model="gemini-2.0-flash")        builder = MessageGraph()        model_with_tools = model.bind_tools([get_product_details])
+        # Define your graph logic
+        builder.add_node("agent", model_with_tools)
+        tool_node = ToolNode([get_product_details]) # Pass the tool directly to ToolNode
+        builder.add_node("call_tool", tool_node)
 
-        builder.add_node("tools", model_with_tools)        tool_node = ToolNode([get_product_details])
+        # Define conditional edges
+        def should_continue(state: list[BaseMessage]):
+            last_message = state[-1]
+            # If there is no tool call, then we finish
+            if not last_message.tool_calls:
+                return "end"
+            # Otherwise if there is a tool call, we run it
+            return "continue_tool"
 
-        # Define your graph logic (simplified for illustration)        builder.add_node("agent", model_with_tools)        builder.add_node("call_tool", tool_node)
+        builder.add_conditional_edges(
+            "agent",
+            should_continue,
+            {
+                "continue_tool": "call_tool",
+                "end": END
+            }
+        )
+        builder.add_edge("call_tool", "agent") # Tool result goes back to agent
 
-        builder.add_edge("agent", "call_tool") # Agent decides to call a tool        builder.add_edge("call_tool", "agent") # Tool result goes back to agent
-
-        builder.set_entry_point("agent")        builder.set_finish_point("agent") # Agent decides when to finish
-
+        builder.set_entry_point("agent")
         self.graph = builder.compile()
 
-    def query(self, input_message: str):        # This is how your deployed agent will be queried        return self.graph.invoke({"messages": [HumanMessage(content=input_message)]})
+    def query(self, input_message: str):
+        # This is how your deployed agent will be queried
+        if self.graph is None:
+            raise RuntimeError("Graph not set up. Call set_up() first.")
+        # LangGraph invoke expects a dictionary with 'messages' key
+        return self.graph.invoke({"messages": [HumanMessage(content=input_message)]})
 
-# Assuming PROJECT_ID and LOCATION are already defined from step 1# and SimpleLangGraphApp is defined as above
+def main():
+    """
+    Main function to initialize and run the LangGraph application locally.
+    """
+    # Initialize Vertex AI
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
 
-# Instantiate your LangGraph applanggraph_app = SimpleLangGraphApp(project=PROJECT_ID, location=LOCATION)langgraph_app.set_up() # Call set_up to compile the graph
+    # Instantiate your LangGraph app
+    langgraph_app = SimpleLangGraphApp(project=PROJECT_ID, location=LOCATION)
+    langgraph_app.set_up() # Call set_up to compile the graph
 
-# Deploy to Agent Engineremote_agent = agent_engines.create(    langgraph_app,    requirements=[        "google-cloud-aiplatform[agent_engines,langchain]",        "cloudpickle==3.0.0",        "pydantic>=2.10", # Adjust pydantic version if needed        "httpx",        "langgraph",        # Add any other libraries your tools or graph might need    ],    display_name="My LangGraph Agent")
+    # Query the local LangGraph app
+    print("--- Querying LangGraph App Locally ---")
 
-print(f"Deployed agent resource name: {remote_agent.resource_name}")
+    response = langgraph_app.query("What are the details for a laptop?")
+    print("\nLocal Response 1: 'What are the details for a laptop?'")
+    print(response)
 
-response = remote_agent.query("What are the details for a laptop?")print(response)
+    response_no_tool = langgraph_app.query("Tell me a joke.")
+    print("\nLocal Response 2: 'Tell me a joke.' (no tool call)")
+    print(response_no_tool)
+
+    response_unknown_product = langgraph_app.query("What about a bicycle?")
+    print("\nLocal Response 3: 'What about a bicycle?' (unknown product)")
+    print(response_unknown_product)
+
+if __name__ == "__main__":
+    main()
