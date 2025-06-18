@@ -9,11 +9,14 @@ from langgraph.graph import START, END, StateGraph
 
 # --- Configuration ---
 # IMPORTANT: Replace with your actual Google Cloud Project ID
-PROJECT_ID = "spiritual-verve-461804-h5" # Assuming this is your project ID from the error
-# Pub/Sub Topic and Subscription Names
-AGENT_A_OUTPUT_TOPIC = "agent-a-output"
-AGENT_A_OUTPUT_SUBSCRIPTION = "agent-a-output-sub" # Corrected based on your error message
+PROJECT_ID = "your-gcp-project-id" # e.g., "spiritual-verve-461804-h5"
 
+# Pub/Sub Topic and Subscription Names
+# This topic is where the PublishingAgent will send its output.
+PUBLISHING_AGENT_OUTPUT_TOPIC = "publishing-agent-output"
+# This subscription will be used by our async Pub/Sub listener utility.
+# Messages received here will trigger the ListeningAgent.
+LISTENING_AGENT_INPUT_SUBSCRIPTION = "listening-agent-input-sub"
 
 # --- Pub/Sub Helper Classes ---
 
@@ -71,7 +74,6 @@ class AsyncPubSubSubscriber:
             message.ack() # Acknowledge the message once it's scheduled for processing
         except Exception as e:
             print(f"Error in _message_callback (message not acknowledged): {e}")
-            # Consider nack() or specific error handling if message processing failed here
 
     async def start_listening(self):
         """Starts listening for messages on the configured subscription."""
@@ -102,125 +104,173 @@ class AsyncPubSubSubscriber:
 # --- LangGraph Definition ---
 
 class AgentState(TypedDict):
+    """
+    Represents the shared state of our graph.
+    """
     messages: Annotated[List[BaseMessage], operator.add]
-    workflow_step: str
-    input_data: dict
+    # We will use 'last_pubsub_message' to store the payload from Pub/Sub
+    # before it's processed by the ListeningAgent.
+    last_pubsub_message: dict
+    workflow_status: str
 
+# Initialize Pub/Sub Publisher Client
 pubsub_publisher = AsyncPubSubPublisher(PROJECT_ID)
 
-async def agent_a_node(state: AgentState):
-    print(f"\n--- Agent A ({state['workflow_step']}) ---")
-    current_input = state['input_data'].get('content', 'No specific input.')
-    print(f"Agent A received input: '{current_input}'")
+async def publishing_agent_node(state: AgentState):
+    """
+    This agent simulates performing a task and then publishes its result to Pub/Sub.
+    It doesn't care about what happens next.
+    """
+    print(f"\n--- PublishingAgent ({state['workflow_status']}) ---")
+    initial_request = state['messages'][0].content if state['messages'] else "No initial request."
+    print(f"PublishingAgent received initial request: '{initial_request}'")
 
-    response_content = f"Agent A processed '{current_input}' and is ready for next step."
-    new_message = HumanMessage(content=response_content, name="AgentA")
+    # Simulate complex processing
+    processed_data = f"Document '{initial_request[:20]}...' processed. Summary generated."
+    agent_output_message = HumanMessage(content=processed_data, name="PublishingAgent")
 
-    message_payload = json.dumps({
-        "workflow_id": "unique_workflow_id_123",
-        "from_agent": "AgentA",
-        "processed_data": response_content,
-        "next_step_hint": "proceed_to_agent_b"
-    }).encode("utf-8")
+    # Prepare data to send via Pub/Sub
+    pubsub_payload = {
+        "workflow_id": "workflow_XYZ_456", # A unique ID to track a specific workflow instance
+        "origin_agent": "PublishingAgent",
+        "processed_result": processed_data,
+        "next_action": "analyze_summary" # Hint for the next stage
+    }
+    encoded_payload = json.dumps(pubsub_payload).encode("utf-8")
 
-    await pubsub_publisher.publish_message(AGENT_A_OUTPUT_TOPIC, message_payload)
+    # Publish the message
+    await pubsub_publisher.publish_message(PUBLISHING_AGENT_OUTPUT_TOPIC, encoded_payload)
 
+    print("PublishingAgent finished its immediate task and published to Pub/Sub.")
     return {
-        "messages": [new_message],
-        "workflow_step": "agent_a_completed",
-        "input_data": {}
+        "messages": [agent_output_message],
+        "workflow_status": "published_to_pubsub",
+        "last_pubsub_message": {} # Clear, as this agent published it
     }
 
-async def agent_b_node(state: AgentState):
-    print(f"\n--- Agent B ({state['workflow_step']}) ---")
-    last_message = state['messages'][-1].content if state['messages'] else "No prior message."
-    print(f"Agent B received state, last message: '{last_message}'")
-    print(f"Agent B's internal input_data: {state['input_data']}")
+async def listening_agent_node(state: AgentState):
+    """
+    This agent is designed to process data that arrives via Pub/Sub.
+    It takes the 'last_pubsub_message' from the state.
+    """
+    print(f"\n--- ListeningAgent ({state['workflow_status']}) ---")
+    pubsub_data = state.get('last_pubsub_message', {})
+    processed_result = pubsub_data.get('processed_result', 'No processed result found in Pub/Sub data.')
+    origin_agent = pubsub_data.get('origin_agent', 'unknown')
+    next_action = pubsub_data.get('next_action', 'no_action_specified')
 
-    processed_content = state['input_data'].get('processed_data', 'No specific data for B.')
-    response_content = f"Agent B processed '{processed_content}' and completed its task."
-    new_message = HumanMessage(content=response_content, name="AgentB")
+    print(f"ListeningAgent received data from '{origin_agent}' via Pub/Sub: '{processed_result}'")
+    print(f"Suggested next action: '{next_action}'")
 
+    # Simulate further analysis
+    analysis_result = f"ListeningAgent performed analysis on '{processed_result}'. Confirmed action: {next_action}."
+    agent_output_message = HumanMessage(content=analysis_result, name="ListeningAgent")
+
+    print("ListeningAgent completed its processing.")
     return {
-        "messages": [new_message],
-        "workflow_step": "agent_b_completed"
+        "messages": [agent_output_message],
+        "workflow_status": "listening_agent_completed",
+        "last_pubsub_message": {} # Clear after processing
     }
 
-workflow = StateGraph(AgentState)
-workflow.add_node("agent_a", agent_a_node)
-workflow.add_node("agent_b", agent_b_node)
-workflow.add_edge(START, "agent_a")
-workflow.add_edge("agent_a", "agent_b")
-workflow.add_edge("agent_b", END)
-app = workflow.compile()
+# --- LangGraph Workflow Definition ---
+# This graph will represent the workflow that starts with PublishingAgent
+# and can be separately triggered for ListeningAgent.
 
-# --- Pub/Sub Callback to Trigger/Resume LangGraph ---
+publishing_workflow = StateGraph(AgentState)
+publishing_workflow.add_node("publishing_agent", publishing_agent_node)
+publishing_workflow.add_edge(START, "publishing_agent")
+publishing_workflow.add_edge("publishing_agent", END) # PublishingAgent's graph run completes here
 
-async def pubsub_langgraph_callback(message_data: str, attributes: dict):
-    print(f"\n--- Pub/Sub Message Received ---")
-    print(f"Message Data: {message_data}")
-    print(f"Attributes: {attributes}")
+# Compile the graph for the publishing part
+publishing_app = publishing_workflow.compile()
+
+# We can define a separate graph or entry point for the ListeningAgent
+# This emphasizes that it's triggered externally via Pub/Sub.
+# For simplicity, we'll use the same `AgentState` and define the ListeningAgent as
+# a node within a graph that can be invoked directly.
+listening_workflow = StateGraph(AgentState)
+listening_workflow.add_node("listening_agent", listening_agent_node)
+# The listening agent is intended to be triggered directly by the Pub/Sub callback,
+# so we can make it the START of its own conceptual subgraph/workflow when invoked this way.
+listening_workflow.add_edge(START, "listening_agent")
+listening_workflow.add_edge("listening_agent", END)
+listening_app = listening_workflow.compile()
+
+
+# --- Pub/Sub Callback to Trigger ListeningAgent ---
+
+async def pubsub_trigger_listening_agent_callback(message_data: str, attributes: dict):
+    """
+    This callback is executed when a message is received from Pub/Sub.
+    It parses the message and invokes the 'listening_app' (ListeningAgent).
+    """
+    print(f"\n--- Pub/Sub Listener (Triggering ListeningAgent) ---")
+    print(f"Received raw message data: {message_data}")
+    print(f"Received attributes: {attributes}")
 
     try:
-        parsed_message = json.loads(message_data)
-        from_agent = parsed_message.get("from_agent", "unknown")
-        processed_data = parsed_message.get("processed_data", "")
-        next_step_hint = parsed_message.get("next_step_hint", "")
-        workflow_id = parsed_message.get("workflow_id", "default_workflow")
+        parsed_payload = json.loads(message_data)
+        workflow_id = parsed_payload.get("workflow_id", "no_workflow_id")
 
-        initial_state_for_graph = {
-            "messages": [HumanMessage(content=f"Received from Pub/Sub: {processed_data}", name="PubSubListener")],
-            "workflow_step": "pubsub_triggered",
-            "input_data": parsed_message
+        print(f"Parsed payload for workflow ID: {workflow_id}")
+
+        # Construct the initial state for the ListeningAgent's workflow.
+        # The key is to pass the Pub/Sub data in a way the agent can access it.
+        initial_state_for_listening_agent = {
+            "messages": [HumanMessage(content=f"Pub/Sub message received for workflow {workflow_id}", name="PubSubTrigger")],
+            "workflow_status": "triggered_by_pubsub",
+            "last_pubsub_message": parsed_payload # Pass the entire parsed payload
         }
 
-        print(f"Invoking LangGraph based on Pub/Sub message. Next hint: {next_step_hint}")
-
-        final_state = await app.ainvoke(initial_state_for_graph)
-        print("\n--- LangGraph Execution Finished (from Pub/Sub trigger) ---")
-        print("Final LangGraph state:", final_state)
+        print(f"Invoking ListeningAgent workflow for workflow ID: {workflow_id}")
+        # Invoke the separate compiled graph for the listening agent
+        final_state_listening_agent = await listening_app.ainvoke(initial_state_for_listening_agent)
+        print(f"ListeningAgent workflow for {workflow_id} completed. Final state:\n{final_state_listening_agent}")
 
     except json.JSONDecodeError:
-        print(f"Error: Could not parse message data as JSON: {message_data}")
+        print(f"ERROR: Could not parse Pub/Sub message data as JSON: {message_data}")
     except Exception as e:
-        print(f"An unexpected error occurred in Pub/Sub callback: {e}")
+        print(f"ERROR: An unexpected error occurred in Pub/Sub callback triggering ListeningAgent: {e}")
 
 # --- Main Application Execution ---
 
 async def main():
-    print("Starting asynchronous LangGraph agents with Pub/Sub...")
+    print("Starting asynchronous LangGraph agents with explicit Pub/Sub integration...")
 
-    # GET THE CURRENT EVENT LOOP IN THE MAIN THREAD
+    # Get the current event loop to pass to the subscriber
     main_loop = asyncio.get_running_loop()
 
-    # Pass the main_loop to the AsyncPubSubSubscriber
-    subscriber = AsyncPubSubSubscriber(
-        PROJECT_ID, AGENT_A_OUTPUT_SUBSCRIPTION, pubsub_langgraph_callback, main_loop
+    # Initialize and start the Pub/Sub subscriber for the ListeningAgent's input
+    pubsub_subscriber = AsyncPubSubSubscriber(
+        PROJECT_ID, LISTENING_AGENT_INPUT_SUBSCRIPTION, pubsub_trigger_listening_agent_callback, main_loop
     )
+    subscriber_task = asyncio.create_task(pubsub_subscriber.start_listening())
 
-    subscriber_task = asyncio.create_task(subscriber.start_listening())
-
-    initial_trigger_input = {
-        "messages": [HumanMessage(content="Initial request to start workflow.")],
-        "workflow_step": "initial_trigger",
-        "input_data": {"initial_request": "Process this document"}
+    # --- Step 1: Trigger the PublishingAgent ---
+    print("\n--- Triggering PublishingAgent workflow ---")
+    initial_publishing_input = {
+        "messages": [HumanMessage(content="Process financial report 2025-Q1.")],
+        "workflow_status": "initial_request",
+        "last_pubsub_message": {} # Not relevant for initial trigger
     }
-
-    print("\n--- Initiating first LangGraph execution (Agent A) ---")
     try:
-        initial_graph_run_result = await app.ainvoke(initial_trigger_input)
-        print("\n--- Initial LangGraph execution finished (Agent A published to Pub/Sub) ---")
-        print("Final state after initial run:", initial_graph_run_result)
+        # Invoke the graph that contains the PublishingAgent
+        final_state_publishing_agent = await publishing_app.ainvoke(initial_publishing_input)
+        print("\n--- PublishingAgent workflow completed and published to Pub/Sub ---")
+        print(f"Final state of PublishingAgent workflow:\n{final_state_publishing_agent}")
     except Exception as e:
-        print(f"Error during initial LangGraph run: {e}")
+        print(f"ERROR: PublishingAgent workflow failed: {e}")
 
-    print("\nMain loop running. Waiting for Pub/Sub messages...")
+    print("\nMain application running, waiting for Pub/Sub messages to activate ListeningAgent...")
+
+    # Keep the main loop alive to allow the Pub/Sub subscriber to run
     try:
         await subscriber_task
     except asyncio.CancelledError:
         print("Main application loop cancelled.")
     finally:
-        await subscriber.stop_listening()
+        await pubsub_subscriber.stop_listening()
         print("Application shutting down.")
 
 if __name__ == "__main__":
@@ -231,4 +281,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nApplication stopped by user (Ctrl+C).")
     except Exception as e:
-        print(f"An error occurred during application startup/execution: {e}")
+        print(f"An unexpected error occurred during application execution: {e}")
