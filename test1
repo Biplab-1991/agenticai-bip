@@ -2,68 +2,166 @@ from typing import Annotated, TypedDict
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 import operator
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langgraph_supervisor import create_supervisor
 from langgraph.prebuilt import create_react_agent
+import requests
+import json
+from requests.structures import CaseInsensitiveDict
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 # 1. Define the Graph State (same as before)
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], operator.add]
 
+RAPIDAPI_KEY="b95a0f66damsha5c6d0bf2d07954p1d6ed7jsn92d79eb6e8da"
+OPENWEATHERMAP_API_KEY="c6e6e4f39319819c7983ae9e3e626314"
 
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-05-20", google_api_key="AIzaSyBo4a3W2yzFg_YMdIBSYgKIBn6JDnf2Gc4")
 
-# Define some basic tools for our agents
+
+# writing code for weather tool which uses a weather API
 @tool
-def web_search(query: str) -> str:
-    """Performs a simulated web search and returns the result."""
-    print(f"Performing web search for: {query}")
-    # In a real scenario, this would use a real search API (e.g., Tavily, Google Search)
-    if "langgraph" in query.lower():
-        return "LangGraph is a library for building stateful, multi-agent applications with LLMs by representing the workflow as a graph."
-    return f"Simulated search result for '{query}': Information about {query} found."
+def get_current_weather(city: str, units: str = "metric") -> str:
+    """
+    Fetches the current weather conditions for a specified city using OpenWeatherMap.
+    Returns temperature, main weather condition, and description.
+
+    Args:
+        city (str): The name of the city (e.g., "London", "New York", "Chennai").
+        units (str): The unit system for temperature. 'metric' for Celsius (default),
+                     'imperial' for Fahrenheit, or 'standard' for Kelvin.
+    """
+    base_url = "https://api.openweathermap.org/data/2.5/weather"
+    #print(f"Calling RapidAPI URL: {base_url}")
+    params = {
+        "q": city,
+        "units": units,
+        "appid": OPENWEATHERMAP_API_KEY
+    }
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+
+        if data.get("cod") == 200:
+            main_data = data.get("main", {})
+            weather_data = data.get("weather", [{}])[0]
+            temp = main_data.get("temp")
+            feels_like = main_data.get("feels_like")
+            humidity = main_data.get("humidity")
+            description = weather_data.get("description")
+            main_condition = weather_data.get("main")
+            city_name_from_api = data.get("name") # Use city name from API response for accuracy
+
+            unit_symbol = "°C" if units == "metric" else ("°F" if units == "imperial" else "K")
+
+            return (
+                f"Current weather in {city_name_from_api}: "
+                f"{temp}{unit_symbol} (feels like {feels_like}{unit_symbol}), "
+                f"Conditions: {main_condition} - {description}, "
+                f"Humidity: {humidity}%."
+            )
+        else:
+            return f"Error from OpenWeatherMap API for {city}: {data.get('message', 'Unknown error')} (Code: {data.get('cod')})"
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code
+        if status_code == 404:
+            return f"City '{city}' not found by OpenWeatherMap. Please check the spelling."
+        elif status_code == 401:
+            return "OpenWeatherMap API Key is invalid or expired. Please check your key."
+        else:
+            return f"HTTP error from OpenWeatherMap API for {city}: {e}"
+    except requests.exceptions.ConnectionError as e:
+        return f"Connection error to OpenWeatherMap API: {e}. Please check your internet connection."
+    except requests.exceptions.Timeout as e:
+        return f"Timeout error with OpenWeatherMap API: {e}."
+    except json.JSONDecodeError:
+        return f"Failed to decode JSON from OpenWeatherMap API response for {city}."
+    except Exception as e:
+        return f"An unexpected error occurred with OpenWeatherMap API for {city}: {e}"
 
 @tool
-def generate_poem(topic: str) -> str:
-    """Generates a short, whimsical poem about a given topic."""
-    print(f"Generating poem about: {topic}")
-    return llm.invoke(f"Write a short, whimsical poem about a {topic}.").content
+def get_country_detail(country_name: str) -> str:
+    """
+    Fetches details about a country using the RapidAPI GeoDB API."""
+    headers = CaseInsensitiveDict()
+    headers["x-rapidapi-host"] = "wft-geo-db.p.rapidapi.com"
+    # Use the RAPIDAPI_KEY from the environment variable directly
+    headers["x-rapidapi-key"] = RAPIDAPI_KEY
+
+    country_code = {
+        "India": "IN",
+        "United States": "US"
+    }
+    
+    if country_name not in country_code:
+        return f"Country code not available for {country_name}. Currently supports: {', '.join(country_code.keys())}"
+
+    cntry_name_shrt_code = country_code[country_name]
+    url = f"https://wft-geo-db.p.rapidapi.com/v1/geo/countries/{cntry_name_shrt_code}"
+    
+    print(f"Calling RapidAPI URL: {url}")
+    
+    try:
+        res = requests.get(url, headers=headers)
+        res.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        
+        data = res.json()["data"]
+        callingcode = data["callingCode"]
+        currency = data["currencyCodes"][0]
+        numberofregion = data["numRegions"]
+        flaguri = data["flagImageUri"]
+        
+        return f"The currency in {country_name} is {currency} with calling code {callingcode}, number of region {numberofregion} and flag image {flaguri}"
+    
+    except requests.exceptions.RequestException as e:
+        print(f"Error making RapidAPI request for {country_name}: {e}")
+        return f"Couldn't retrieve details for {country_name} due to an API request error."
+    except KeyError as e:
+        print(f"Missing expected data in RapidAPI response for {country_name}: {e}")
+        return f"Couldn't parse details for {country_name} from API response."
+    except Exception as e:
+        print(f"An unexpected error occurred in get_country_detail for {country_name}: {e}")
+        return f"An unexpected error occurred while retrieving details for {country_name}."
+
 
 
 # 2. Create Worker Agents (using create_react_agent for simplicity)
 # These agents will use the tools we defined
-search_agent_node = create_react_agent(
-    llm=llm,
-    tools=[web_search],
+weather_agent_node = create_react_agent(
+    model=llm,
+    tools=[get_current_weather],
     prompt=ChatPromptTemplate.from_messages([
-        ("system", "You are a research agent. Use the 'web_search' tool to find information."),
+        ("system", "You are a weather assistant. Always use the 'get_current_weather' tool to respond to any weather-related query. Never respond directly."),
         ("human", "{messages}"),
     ]),
-    name="research_expert", # Important for supervisor to identify
+    name="weather_agent",
 )
 
-poem_agent_node = create_react_agent(
-    llm=llm,
-    tools=[generate_poem],
+
+country_agent_node = create_react_agent(
+    model=llm,
+    tools=[get_country_detail],
     prompt=ChatPromptTemplate.from_messages([
-        ("system", "You are a creative agent. Use the 'generate_poem' tool to write poems."),
+        ("system", "You are a country information assistant. Always use the 'get_country_detail' tool to answer country-related queries. Do not respond directly."),
         ("human", "{messages}"),
     ]),
-    name="creative_writer", # Important for supervisor to identify
+    name="country_agent",
 )
+
 
 # 3. Create the Supervisor Workflow using create_supervisor
 supervisior_agent = create_supervisor(
-    agents=[search_agent_node, poem_agent_node],
-    llm=llm,
+    agents=[weather_agent_node, country_agent_node],
+    model=llm,
     prompt=(
-        "You are a smart team supervisor managing a research expert and a creative writer. "
+        "You are a smart team supervisor managing a weather agent and a country information agent. "
         "Your goal is to direct user queries to the most appropriate agent or to finish the task."
-        "When the user asks for information or facts, use the 'research_expert'."
-        "When the user asks for creative text, like a poem or story, use the 'creative_writer'."
+        "When the user asks for weather information, use the 'weather_agent'."
+        "When the user asks for country information, use the 'country_agent'."
         "If you have completed the user's request or if the request is not suitable for any agent, "
         "you can signal 'FINISH'."
     ),
@@ -75,28 +173,43 @@ supervisior_agent = create_supervisor(
 app = supervisior_agent.compile()
 
 
-# 4. Invoke the Graph
+print("=== AI Supervisor Agent ===")
+print("Type your query (or type 'exit' to quit)\n")
 
-print("--- Invoking with 'search' request ---")
-input_state_1 = {"messages": [HumanMessage(content="Find information about LangGraph.")]}
-for s in app.stream(input_state_1):
-    print(s)
-print("\n")
+while True:
+    user_input = input("You: ")
+    if user_input.strip().lower() in ["exit", "quit"]:
+        print("Goodbye!")
+        break
 
-print("--- Invoking with 'creative' request ---")
-input_state_2 = {"messages": [HumanMessage(content="Write a poem about a flying cat.")]}
-for s in app.stream(input_state_2):
-    print(s)
-print("\n")
+    input_state = {"messages": [HumanMessage(content=user_input)]}
+    
+    print("AI:")
+    try:
+        final_response = None
+        for step in app.stream(input_state):
+            for agent_name, data in step.items():
+                messages = data.get("messages", [])
+                if messages:
+                    last_message = messages[-1]
+                    if hasattr(last_message, "content") and last_message.content.strip():
+                        final_response = last_message.content
+        if final_response:
+            print(final_response)
+        else:
+            print("[No meaningful response received.]")
+    except Exception as e:
+        print("An error occurred while processing your query:", e)
 
-print("--- Invoking with a request that leads to FINISH ---")
-input_state_3 = {"messages": [HumanMessage(content="Hello there!")]}
-for s in app.stream(input_state_3):
-    print(s)
-print("\n")
+    print("\n--- Ask another question ---\n")
 
-print("--- Invoking with a mixed request (often defaults to research or needs more complex routing) ---")
-input_state_4 = {"messages": [HumanMessage(content="Tell me a fact about space, then write a poem about it.")]}
-for s in app.stream(input_state_4):
-    print(s)
-print("\n")
+
+
+
+
+# Agents
+# integrate agents into the supervisor
+# test the agent first with queries to understand respective tool calling
+# User query should be taken on runtime
+# cmd conversation
+# contextualize the agent
