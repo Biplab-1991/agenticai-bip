@@ -1,13 +1,281 @@
-Type your query (or type 'exit' to quit)
+from typing import Annotated, TypedDict
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
+import operator
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+from langgraph_supervisor import create_supervisor # Ensure this is installed
+from langgraph.prebuilt import create_react_agent
+import requests
+import json
+from requests.structures import CaseInsensitiveDict
+from langchain_google_genai import ChatGoogleGenerativeAI
+import os
 
-You: Hi
-AI:
-I'm sorry, I couldn't process your request. Please try rephrasing it or ask a different question.
+# --- API Keys (IMPORTANT: Load from environment variables) ---
+RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
+OPENWEATHERMAP_API_KEY = os.environ.get("OPENWEATHERMAP_API_KEY")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
---- Ask another question ---
+if not RAPIDAPI_KEY:
+    raise ValueError("RAPIDAPI_KEY environment variable not set.")
+if not OPENWEATHERMAP_API_KEY:
+    raise ValueError("OPENWEATHERMAP_API_KEY environment variable not set.")
+if not GOOGLE_API_KEY:
+    raise ValueError("GOOGLE_API_KEY environment variable not set.")
 
-You: What is the weather of Delhi
-AI:
-I'm sorry, I couldn't process your request. Please try rephrasing it or ask a different question.
 
---- Ask another question ---
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-05-20", google_api_key=GOOGLE_API_KEY, temperature=0.2) # Lower temperature for more deterministic behavior
+
+# 1. Define the Graph State
+class AgentState(TypedDict):
+    messages: Annotated[list[BaseMessage], operator.add]
+    # Optionally, add a 'next' field if you want to explicitly track next agent
+    # next: str
+
+
+# --- Tools ---
+@tool
+def get_current_weather(city: str, units: str = "metric") -> str:
+    """
+    Fetches the current weather conditions for a specified city using OpenWeatherMap.
+    Returns temperature, main weather condition, and description.
+
+    Args:
+        city (str): The name of the city (e.g., "London", "New York", "Chennai").
+        units (str): The unit system for temperature. 'metric' for Celsius (default),
+                     'imperial' for Fahrenheit, or 'standard' for Kelvin.
+    """
+    base_url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "q": city,
+        "units": units,
+        "appid": OPENWEATHERMAP_API_KEY
+    }
+    print(f"DEBUG: Calling OpenWeatherMap API for {city} with units={units}")
+    try:
+        response = requests.get(base_url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("cod") == 200:
+            main_data = data.get("main", {})
+            weather_data = data.get("weather", [{}])[0]
+            temp = main_data.get("temp")
+            feels_like = main_data.get("feels_like")
+            humidity = main_data.get("humidity")
+            description = weather_data.get("description")
+            main_condition = weather_data.get("main")
+            city_name_from_api = data.get("name")
+
+            unit_symbol = "°C" if units == "metric" else ("°F" if units == "imperial" else "K")
+
+            result = (
+                f"Current weather in {city_name_from_api}: "
+                f"{temp}{unit_symbol} (feels like {feels_like}{unit_symbol}), "
+                f"Conditions: {main_condition} - {description}, "
+                f"Humidity: {humidity}%."
+            )
+            print(f"DEBUG: OpenWeatherMap API Success: {result}")
+            return result
+        else:
+            error_msg = f"Error from OpenWeatherMap API for {city}: {data.get('message', 'Unknown error')} (Code: {data.get('cod')})"
+            print(f"DEBUG: OpenWeatherMap API Error: {error_msg}")
+            return error_msg
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code
+        error_msg = f"HTTP error from OpenWeatherMap API for {city}: {status_code} - {e.response.text}"
+        print(f"DEBUG: OpenWeatherMap API HTTP Error: {error_msg}")
+        if status_code == 404:
+            return f"City '{city}' not found by OpenWeatherMap. Please check the spelling."
+        elif status_code == 401:
+            return "OpenWeatherMap API Key is invalid or expired. Please check your key."
+        else:
+            return error_msg
+    except requests.exceptions.ConnectionError as e:
+        error_msg = f"Connection error to OpenWeatherMap API: {e}. Please check your internet connection."
+        print(f"DEBUG: OpenWeatherMap API Connection Error: {error_msg}")
+        return error_msg
+    except requests.exceptions.Timeout as e:
+        error_msg = f"Timeout error with OpenWeatherMap API: {e}. The request took too long to respond."
+        print(f"DEBUG: OpenWeatherMap API Timeout Error: {error_msg}")
+        return error_msg
+    except json.JSONDecodeError:
+        error_msg = f"Failed to decode JSON from OpenWeatherMap API response for {city}. Response was: {response.text[:200]}..."
+        print(f"DEBUG: OpenWeatherMap API JSON Decode Error: {error_msg}")
+        return error_msg
+    except Exception as e:
+        error_msg = f"An unexpected error occurred with OpenWeatherMap API for {city}: {type(e).__name__} - {e}"
+        print(f"DEBUG: OpenWeatherMap API Unexpected Error: {error_msg}")
+        return error_msg
+
+@tool
+def get_country_detail(country_name: str) -> str:
+    """
+    Fetches details about a country using the RapidAPI GeoDB API.
+    Note: Currently supports only a limited set of countries with hardcoded codes.
+    """
+    headers = CaseInsensitiveDict()
+    headers["x-rapidapi-host"] = "wft-geo-db.p.rapidapi.com"
+    headers["x-rapidapi-key"] = RAPIDAPI_KEY
+
+    country_code = {
+        "India": "IN", "United States": "US", "United Kingdom": "GB",
+        "Canada": "CA", "Australia": "AU", "Germany": "DE",
+        "France": "FR", "Japan": "JP", "China": "CN",
+        "Brazil": "BR", "South Africa": "ZA", "Mexico": "MX",
+        "Spain": "ES", "Italy": "IT", "Russia": "RU" # Added more common countries
+    }
+
+    actual_country_name = next((key for key in country_code if key.lower() == country_name.lower()), None)
+    if not actual_country_name:
+        return f"Country code not available for '{country_name}'. Currently supports: {', '.join(country_code.keys())}"
+
+    cntry_name_shrt_code = country_code[actual_country_name]
+    url = f"https://wft-geo-db.p.rapidapi.com/v1/geo/countries/{cntry_name_shrt_code}"
+
+    print(f"DEBUG: Calling RapidAPI GeoDB URL: {url}")
+
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        res.raise_for_status()
+
+        data = res.json()["data"]
+        callingcode = data.get("callingCode", "N/A")
+        currency = data["currencyCodes"][0] if data.get("currencyCodes") else "N/A"
+        numberofregion = data.get("numRegions", "N/A")
+        flaguri = data.get("flagImageUri", "N/A")
+
+        result = (f"The currency in {actual_country_name} is {currency} with calling code {callingcode}, "
+                  f"number of regions {numberofregion} and flag image {flaguri}")
+        print(f"DEBUG: RapidAPI GeoDB Success: {result}")
+        return result
+
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code
+        error_msg = f"HTTP error from RapidAPI GeoDB for {actual_country_name}: {status_code} - {e.response.text}"
+        print(f"DEBUG: RapidAPI GeoDB HTTP Error: {error_msg}")
+        if status_code == 404:
+            return f"Country '{actual_country_name}' not found by GeoDB API. Please check the spelling or if it's supported."
+        elif status_code == 401:
+            return "RapidAPI Key is invalid or expired. Please check your key."
+        else:
+            return error_msg
+    except requests.exceptions.ConnectionError as e:
+        error_msg = f"Connection error to RapidAPI GeoDB: {e}. Please check your internet connection."
+        print(f"DEBUG: RapidAPI GeoDB Connection Error: {error_msg}")
+        return error_msg
+    except requests.exceptions.Timeout as e:
+        error_msg = f"Timeout error with RapidAPI GeoDB: {e}. The request took too long to respond."
+        print(f"DEBUG: RapidAPI GeoDB Timeout Error: {error_msg}")
+        return error_msg
+    except json.JSONDecodeError:
+        error_msg = f"Failed to decode JSON from RapidAPI GeoDB API response for {actual_country_name}. Response was: {res.text[:200]}..."
+        print(f"DEBUG: RapidAPI GeoDB JSON Decode Error: {error_msg}")
+        return error_msg
+    except KeyError as e:
+        error_msg = f"Missing expected data in RapidAPI GeoDB response for {actual_country_name}: '{e}' key not found. Response: {res.json()}"
+        print(f"DEBUG: RapidAPI GeoDB KeyError: {error_msg}")
+        return error_msg
+    except Exception as e:
+        error_msg = f"An unexpected error occurred in get_country_detail for {actual_country_name}: {type(e).__name__} - {e}"
+        print(f"DEBUG: RapidAPI GeoDB Unexpected Error: {error_msg}")
+        return error_msg
+
+
+# 2. Create Worker Agents
+weather_agent_node = create_react_agent(
+    model=llm,
+    tools=[get_current_weather],
+    prompt=ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful weather assistant. Your sole purpose is to provide current weather information using the 'get_current_weather' tool. When asked about weather, use this tool. If the tool call is successful, respond with the weather information. If the tool fails or cannot find the city, clearly state that you couldn't get the weather for the specified location. Never answer questions outside of weather. If the user asks something not related to weather, respond with 'I can only provide current weather information.'"),
+        ("human", "{messages}"),
+    ]),
+    name="weather_agent",
+)
+
+
+country_agent_node = create_react_agent(
+    model=llm,
+    tools=[get_country_detail],
+    prompt=ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful country information assistant. Your sole purpose is to provide details about countries using the 'get_country_detail' tool. When asked about a country, use this tool. If the tool call is successful, respond with the country details. If the tool fails or cannot find the country, clearly state that you couldn't get details for the specified country. Never answer questions outside of country information. If the user asks something not related to countries, respond with 'I can only provide country details.'"),
+        ("human", "{messages}"),
+    ]),
+    name="country_agent",
+)
+
+
+# 3. Create the Supervisor Workflow using create_supervisor
+supervisior_agent = create_supervisor(
+    agents=[weather_agent_node, country_agent_node],
+    model=llm,
+    prompt=(
+        "You are a highly intelligent and decisive team supervisor. Your task is to accurately direct user queries to the most appropriate specialized agent. "
+        "Your decision should be based *solely* on the content of the user's last message. "
+        "Here are your instructions:\n\n"
+        "1.  **If the user's query clearly asks for weather information (e.g., 'weather in X', 'temperature in Y', 'how's the weather in Z'), route it to 'weather_agent'.**\n"
+        "2.  **If the user's query clearly asks for country information (e.g., 'details about X country', 'currency of Y', 'what is the calling code for Z'), route it to 'country_agent'.**\n"
+        "3.  **If a specialized agent provides a successful answer, or if the query is a general greeting, non-topical, or cannot be handled by either agent, signal 'FINISH'.**\n"
+        "4.  **If an agent indicates it could not fulfill its task (e.g., 'City not found', 'Country not available', an error message), relay that message directly to the user and then signal 'FINISH'.**\n"
+        "5.  **For general greetings like 'Hi', 'Hello', 'How are you?', or questions unrelated to weather or country details, respond with a polite, concise message like 'Hello! How can I assist you today? I can provide current weather information or country details.' and then signal 'FINISH'.**\n"
+        "Do NOT attempt to answer questions directly. Your only role is to route or to provide a specific, polite fallback when routing is not possible or appropriate, then FINISH."
+    ),
+    # output_mode="full_history", # Keep this as 'last_message' (default) usually.
+    # The supervisor's LLM is responsible for deciding the next step,
+    # and the prompt is the primary way to guide that.
+)
+
+# Compile the graph
+app = supervisior_agent.compile()
+
+
+print("=== AI Supervisor Agent ===")
+print("Type your query (or type 'exit' to quit)\n")
+
+while True:
+    user_input = input("You: ")
+    if user_input.strip().lower() in ["exit", "quit"]:
+        print("Goodbye!")
+        break
+
+    input_state = {"messages": [HumanMessage(content=user_input)]}
+
+    print("AI:")
+    try:
+        final_response_content = None
+        # Store all messages to help debug if needed
+        full_conversation_history = []
+
+        for s in app.stream(input_state):
+            # Print the full state at each step for detailed debugging
+            print(f"DEBUG STEP: {s}")
+            full_conversation_history.append(s) # Keep track of all steps
+
+            # The 'END' key will contain the final state once the graph concludes.
+            if END in s:
+                messages_at_end = s[END].get("messages", [])
+                if messages_at_end:
+                    last_message = messages_at_end[-1]
+                    if isinstance(last_message, AIMessage) and last_message.content.strip():
+                        final_response_content = last_message.content
+                    elif isinstance(last_message, HumanMessage) and last_message.content.strip():
+                        # In some cases, the supervisor might re-post a HumanMessage (e.g., tool error)
+                        final_response_content = last_message.content
+                    elif isinstance(last_message, ToolMessage) and last_message.content.strip():
+                         # If a ToolMessage is the direct end (less common, but possible)
+                         final_response_content = last_message.content
+                break # Exit the loop once END is reached
+
+        if final_response_content:
+            print(final_response_content)
+        else:
+            # This fallback should be less frequent with improved supervisor prompt
+            print("I'm sorry, I couldn't process your request. The supervisor did not yield a final response. Please try rephrasing it or ask a different question.")
+
+    except Exception as e:
+        print(f"An unexpected error occurred while processing your query: {e}")
+        import traceback
+        traceback.print_exc() # Print full traceback for deep debugging
+
+    print("\n--- Ask another question ---\n")
