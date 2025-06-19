@@ -1,3 +1,102 @@
-ERROR: Failed to deploy agent. Please check your configuration, permissions, and ensure the staging bucket exists and is accessible.
-Error details: _method() takes 1 positional argument but 2 were given
-Common issues: Incorrect PROJECT_ID, STAGING_BUCKET, or missing IAM permissions (e.g., roles/aiplatform.admin, roles/storage.admin).
+from typing import Annotated, TypedDict
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+import operator
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+from langgraph_supervisor import create_supervisor
+from langgraph.prebuilt import create_react_agent
+
+
+# 1. Define the Graph State (same as before)
+class AgentState(TypedDict):
+    messages: Annotated[list[BaseMessage], operator.add]
+
+
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# Define some basic tools for our agents
+@tool
+def web_search(query: str) -> str:
+    """Performs a simulated web search and returns the result."""
+    print(f"Performing web search for: {query}")
+    # In a real scenario, this would use a real search API (e.g., Tavily, Google Search)
+    if "langgraph" in query.lower():
+        return "LangGraph is a library for building stateful, multi-agent applications with LLMs by representing the workflow as a graph."
+    return f"Simulated search result for '{query}': Information about {query} found."
+
+@tool
+def generate_poem(topic: str) -> str:
+    """Generates a short, whimsical poem about a given topic."""
+    print(f"Generating poem about: {topic}")
+    return llm.invoke(f"Write a short, whimsical poem about a {topic}.").content
+
+
+# 2. Create Worker Agents (using create_react_agent for simplicity)
+# These agents will use the tools we defined
+search_agent_node = create_react_agent(
+    llm=llm,
+    tools=[web_search],
+    prompt=ChatPromptTemplate.from_messages([
+        ("system", "You are a research agent. Use the 'web_search' tool to find information."),
+        ("human", "{messages}"),
+    ]),
+    name="research_expert", # Important for supervisor to identify
+)
+
+poem_agent_node = create_react_agent(
+    llm=llm,
+    tools=[generate_poem],
+    prompt=ChatPromptTemplate.from_messages([
+        ("system", "You are a creative agent. Use the 'generate_poem' tool to write poems."),
+        ("human", "{messages}"),
+    ]),
+    name="creative_writer", # Important for supervisor to identify
+)
+
+# 3. Create the Supervisor Workflow using create_supervisor
+supervisior_agent = create_supervisor(
+    agents=[search_agent_node, poem_agent_node],
+    llm=llm,
+    prompt=(
+        "You are a smart team supervisor managing a research expert and a creative writer. "
+        "Your goal is to direct user queries to the most appropriate agent or to finish the task."
+        "When the user asks for information or facts, use the 'research_expert'."
+        "When the user asks for creative text, like a poem or story, use the 'creative_writer'."
+        "If you have completed the user's request or if the request is not suitable for any agent, "
+        "you can signal 'FINISH'."
+    ),
+    # Optional: Customize output mode if needed. Default is 'last_message'.
+    # output_mode="full_history",
+)
+
+# Compile the graph
+app = supervisior_agent.compile()
+
+
+# 4. Invoke the Graph
+
+print("--- Invoking with 'search' request ---")
+input_state_1 = {"messages": [HumanMessage(content="Find information about LangGraph.")]}
+for s in app.stream(input_state_1):
+    print(s)
+print("\n")
+
+print("--- Invoking with 'creative' request ---")
+input_state_2 = {"messages": [HumanMessage(content="Write a poem about a flying cat.")]}
+for s in app.stream(input_state_2):
+    print(s)
+print("\n")
+
+print("--- Invoking with a request that leads to FINISH ---")
+input_state_3 = {"messages": [HumanMessage(content="Hello there!")]}
+for s in app.stream(input_state_3):
+    print(s)
+print("\n")
+
+print("--- Invoking with a mixed request (often defaults to research or needs more complex routing) ---")
+input_state_4 = {"messages": [HumanMessage(content="Tell me a fact about space, then write a poem about it.")]}
+for s in app.stream(input_state_4):
+    print(s)
+print("\n")
