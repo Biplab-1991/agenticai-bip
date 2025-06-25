@@ -1,9 +1,10 @@
-curl --location 'http://localhost:8080/mcp/invoke' \
+curl --location 'http://localhost:8000/mcp/invoke' \
 --header 'Content-Type: application/json' \
+--header 'Accept: application/json' \
 --header 'Accept: text/event-stream' \
 --data '{
-  "tool": "add",
-  "args": {
+  "tool_name": "add",
+  "tool_args": {
     "a": 5,
     "b": 10
   }
