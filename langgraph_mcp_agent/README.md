@@ -27,3 +27,7 @@ python agent.py
 
 You should see the result of a tool invocation like:
 42
+
+use 
+npx@modelcontextprotocol/inspector only to test mcp server
+
