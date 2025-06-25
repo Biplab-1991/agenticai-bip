@@ -1,8 +1,8 @@
-[06/25/25 12:06:53] INFO     Starting MCP server 'MCP Server on Cloud Run' with transport 'streamable-http' on                    server.py:1297
-                             http://0.0.0.0:8000/mcp/                                                                                           
-[INFO]: Starting MCP server 'MCP Server on Cloud Run' with transport 'streamable-http' on http://0.0.0.0:8000/mcp/
-INFO:     Started server process [70183]
-INFO:     Waiting for application startup.
-[INFO]: StreamableHTTP session manager started
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+{
+    "jsonrpc": "2.0",
+    "id": "server-error",
+    "error": {
+        "code": -32602,
+        "message": "Validation error: 11 validation errors for JSONRPCMessage\nJSONRPCRequest.method\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCRequest.jsonrpc\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCRequest.id\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCNotification.method\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCNotification.jsonrpc\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCResponse.jsonrpc\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCResponse.id\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCResponse.result\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCError.jsonrpc\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCError.id\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nJSONRPCError.error\n  Field required [type=missing, input_value={'tool_name': 'add', 'too...rgs': {'a': 5, 'b': 10}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing"
+    }
+}
