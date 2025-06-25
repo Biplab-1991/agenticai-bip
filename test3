@@ -1,11 +1,8 @@
-curl --location 'http://localhost:8000/invoke' \
---header 'Content-Type: application/json' \
---header 'Accept: application/json,text/event-stream' \
---data '{
-  "tool_name": "add",
-  "tool_args": {
-    "a": 5,
-    "b": 10
-  }
-}
-'
+[06/25/25 12:06:53] INFO     Starting MCP server 'MCP Server on Cloud Run' with transport 'streamable-http' on                    server.py:1297
+                             http://0.0.0.0:8000/mcp/                                                                                           
+[INFO]: Starting MCP server 'MCP Server on Cloud Run' with transport 'streamable-http' on http://0.0.0.0:8000/mcp/
+INFO:     Started server process [70183]
+INFO:     Waiting for application startup.
+[INFO]: StreamableHTTP session manager started
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
