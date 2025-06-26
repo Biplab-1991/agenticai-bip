@@ -30,7 +30,7 @@ async def main():
 
         # Ask something that uses a tool
         result = await agent.ainvoke({
-            "messages": [HumanMessage(content="What's 25 + 17?")]
+            "messages": [HumanMessage(content="What's 25 - 17?")]
         })
 
         print(result["messages"][-1].content)

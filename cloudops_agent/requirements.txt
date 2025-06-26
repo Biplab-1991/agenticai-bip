@@ -1,0 +1,7 @@
+boto3
+langchain
+openai
+langgraph
+python-dotenv
+langchain-google-genai
+google-generativeai
