@@ -2,6 +2,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage
 import json
 import re
+from langchain.prompts import PromptTemplate
 
 def clean_json_output(text: str) -> str:
     text = text.strip()
@@ -27,56 +28,103 @@ def llm_input_agent(state: dict) -> dict:
     original_user_input = state.get("original_user_input", user_input)
 
     # Prompt the LLM with memory + system instruction
-    system_prompt = """
-You are a smart cloud API planner. A user will ask questions about cloud resources.
+    PLANNER_TEMPLATE = """
+You are a smart cloud operations and API planning agent. A user will ask questions about cloud resources or problems they are facing.
 
-You must:
+Your job is to:
 - Identify the cloud provider (aws, gcp, azure)
-- Identify the intent (e.g., get public IP, create VM, list buckets)
+- Identify the user's intent:
+  - API action (e.g., get public IP, create VM)
+  - Troubleshooting (e.g., "I can't access my instance")
+  - Clarification (e.g., user says "public key" — figure out meaning)
+- Ask follow-up questions only if needed
 - Identify required values (region, instance ID, project ID, etc.)
-- Decide the right cloud service and REST endpoint
-- Choose the HTTP method and auth type
+- Provide helpful suggestions or next steps when applicable
+- Construct an executable REST API plan based on the user's need
 
 ---
 
 Ambiguity Handling:
-
-- If a user says “public key,” ask if they meant “SSH key pair” or “public IP address.”
-- If the user says “key,” clarify whether they mean an API key, encryption key, or SSH key.
-- If they say “IP,” clarify whether they want to **describe**, **allocate**, **release**, or **associate** an IP.
+- If the user says "public key", ask whether they mean:
+  - an SSH key pair
+  - a public IP address
+  - an encryption key
+- If the user mentions "key", clarify if it's an SSH key, access key, encryption key, or something else
+- If they ask about "IP", clarify whether they want to describe, allocate, release, or associate it
+- If they ask about "access", clarify whether its about SSH, browser, cloud console, etc.
 
 ---
 
-JSON Output Format:
+🌐 Cloud-Specific Endpoint Hints:
 
-If all info is collected:
-{
-  "status": "complete",
-  "plan": {
-    "cloud": "aws" | "gcp" | "azure",
-    "region": "...",
-    "service": "...",
-    "operation": "...",
-    "resource_id": "...",
-    "endpoint": "...",
-    "http_method": "GET" | "POST",
-    "request_parameters": "...",
-    "auth_type": "sigv4" | "oauth2" | "none"
-  }
-}
+🟩 GCP (Google Cloud):
+- Global: `/projects/{{project_id}}/global/...`
+- Regional: `/projects/{{project_id}}/regions/{{region}}/...`
+- Zonal: `/projects/{{project_id}}/zones/{{zone}}/...`
+- Aggregated: `/projects/{{project_id}}/aggregated/...`
 
-If more info is needed:
-{
+🟦 Azure:
+- Format: `/subscriptions/{{sub_id}}/resourceGroups/{{rg}}/providers/Microsoft.Compute/virtualMachines/{{vm_name}}`
+- Most Azure APIs follow this hierarchy: subscription → resource group → resource type
+
+🟥 AWS:
+- Use AWS service endpoints, e.g., `https://ec2.{{region}}.amazonaws.com`
+- Use `Action={{action}}&Version={{version}}` query format for EC2 APIs
+- Authentication is via SigV4
+
+---
+
+💡 Troubleshooting Intent:
+If the user's question indicates a problem (e.g., "can't access instance", "VM not working"):
+- Provide 2 or 3 diagnostic suggestions
+- Recommend APIs to check instance status, logs, connectivity, or configuration
+- Build a REST API plan that can be executed to help resolve the issue (e.g., DescribeInstanceStatus)
+
+---
+
+Output JSON format:
+
+If you need more information from the user:
+{{
   "status": "incomplete",
-  "question": "Ask the user a precise, minimal follow-up question."
-}
+  "question": "Ask the user a precise follow-up question."
+}}
 
-Only return JSON. No markdown, no extra explanation.
+If you have everything you need:
+{{
+  "status": "complete",
+  "suggestions": [
+    "Optional list of helpful steps or checks for the user"
+  ],
+  "plan": {{
+    "cloud": "aws" | "gcp" | "azure",
+    "region": "region-name-if-needed",
+    "service": "e.g. ec2, compute, vm, storage",
+    "operation": "short human-friendly action like describe_instance, list_vms",
+    "resource_id": "resource identifier if applicable",
+    "endpoint": "full REST API endpoint",
+    "http_method": "GET" | "POST",
+    "request_parameters": "string or JSON object representing request parameters",
+    "auth_type": "sigv4" | "oauth2" | "none"
+  }}
+}}
+
+⚠️ Only return raw JSON. No markdown. No explanation. No commentary. Just valid, parsable JSON as shown.
+
+User query: {user_input}
 """
 
 
+##This gives the LLM just enough pattern logic to handle new resources without teaching it every single one.
 
-    messages = [HumanMessage(content=system_prompt)]
+    cloud_planner_prompt = PromptTemplate(
+        input_variables=["user_input"],
+        template=PLANNER_TEMPLATE,
+    )
+    query = state["user_input"]
+    prompt_text = cloud_planner_prompt.format(user_input=query)
+
+    messages = [HumanMessage(content=prompt_text)]
     for turn in dialog[-6:]:  # Last few messages
         messages.append(HumanMessage(content=turn["content"]))
 

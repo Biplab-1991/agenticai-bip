@@ -33,6 +33,5 @@ app = graph.compile()
 if __name__ == "__main__":
     user_input = input("Ask any cloud: ")
     result = app.invoke({"user_input": user_input,"original_user_input": user_input})
-
     final = result.get("final_output") or result.get("plan") or result
     print("\nFinal Answer:", final)

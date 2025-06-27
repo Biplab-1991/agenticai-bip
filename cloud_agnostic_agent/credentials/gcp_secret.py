@@ -2,7 +2,7 @@ from google.cloud import secretmanager
 import json
 import os
 
-def load_aws_credentials_from_gcp(secret_name="aws-credentials", project_id=None):
+def load_aws_credentials_from_gcp(secret_name="aws-credentials", project_id="spiritual-verve-461804-h5"):
     if not project_id:
         project_id = os.environ.get("GCP_PROJECT_ID")
     client = secretmanager.SecretManagerServiceClient()
