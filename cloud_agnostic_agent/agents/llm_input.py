@@ -15,7 +15,7 @@ def clean_json_output(text: str) -> str:
 def llm_input_agent(state: dict) -> dict:
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash-preview-05-20",
-        google_api_key=state.get("google_api_key")  # Inject via env or secret
+        google_api_key="AIzaSyCN0Esg5nooULYxSO7EO82RTmacXnwjzx0"  # Inject via env or secret
     )
 
     user_input = state.get("user_input")
@@ -41,6 +41,7 @@ Your job is to:
 - Identify required values (region, instance ID, project ID, etc.)
 - Provide helpful suggestions or next steps when applicable
 - Construct an executable REST API plan based on the user's need
+- Always include the **full API endpoint with https:// scheme**
 
 ---
 
@@ -51,26 +52,31 @@ Ambiguity Handling:
   - an encryption key
 - If the user mentions "key", clarify if it's an SSH key, access key, encryption key, or something else
 - If they ask about "IP", clarify whether they want to describe, allocate, release, or associate it
-- If they ask about "access", clarify whether its about SSH, browser, cloud console, etc.
+- If they ask about "access", clarify whether it's about SSH, browser, cloud console, or API access
 
 ---
 
-🌐 Cloud-Specific Endpoint Hints:
+Cloud-Specific Endpoint Formatting:
 
 🟩 GCP (Google Cloud):
-- Global: `/projects/{{project_id}}/global/...`
-- Regional: `/projects/{{project_id}}/regions/{{region}}/...`
-- Zonal: `/projects/{{project_id}}/zones/{{zone}}/...`
-- Aggregated: `/projects/{{project_id}}/aggregated/...`
+- Base URL: `https://compute.googleapis.com/compute/v1`
+- Global: `https://compute.googleapis.com/compute/v1/projects/{{project_id}}/global/...`
+- Regional: `https://compute.googleapis.com/compute/v1/projects/{{project_id}}/regions/{{region}}/...`
+- Zonal: `https://compute.googleapis.com/compute/v1/projects/{{project_id}}/zones/{{zone}}/...`
+- Aggregated: `https://compute.googleapis.com/compute/v1/projects/{{project_id}}/aggregated/...`
+- Use `oauth2` authentication
 
-🟦 Azure:
-- Format: `/subscriptions/{{sub_id}}/resourceGroups/{{rg}}/providers/Microsoft.Compute/virtualMachines/{{vm_name}}`
-- Most Azure APIs follow this hierarchy: subscription → resource group → resource type
+🟥 AWS (Amazon Web Services):
+- Base URL: `https://ec2.{{region}}.amazonaws.com`
+- Format: `https://ec2.{{region}}.amazonaws.com?Action={{ActionName}}&Version=2016-11-15`
+- Example: `https://ec2.us-east-1.amazonaws.com?Action=DescribeInstances&Version=2016-11-15`
+- Use `sigv4` authentication
 
-🟥 AWS:
-- Use AWS service endpoints, e.g., `https://ec2.{{region}}.amazonaws.com`
-- Use `Action={{action}}&Version={{version}}` query format for EC2 APIs
-- Authentication is via SigV4
+🟦 Azure (Microsoft Azure):
+- Base URL: `https://management.azure.com`
+- Format: `https://management.azure.com/subscriptions/{{subscription_id}}/resourceGroups/{{resource_group}}/providers/Microsoft.Compute/virtualMachines/{{vm_name}}?api-version={{api_version}}`
+- Example: `https://management.azure.com/subscriptions/xxx/resourceGroups/yyy/providers/Microsoft.Compute/virtualMachines/myVM?api-version=2023-03-01`
+- Use `oauth2` authentication
 
 ---
 
@@ -102,7 +108,7 @@ If you have everything you need:
     "service": "e.g. ec2, compute, vm, storage",
     "operation": "short human-friendly action like describe_instance, list_vms",
     "resource_id": "resource identifier if applicable",
-    "endpoint": "full REST API endpoint",
+    "endpoint": "full REST API endpoint (must begin with https://)",
     "http_method": "GET" | "POST",
     "request_parameters": "string or JSON object representing request parameters",
     "auth_type": "sigv4" | "oauth2" | "none"
@@ -121,8 +127,13 @@ User query: {user_input}
         input_variables=["user_input"],
         template=PLANNER_TEMPLATE,
     )
+    #print("state-----",state)
     query = state["user_input"]
-    prompt_text = cloud_planner_prompt.format(user_input=query)
+    followup_context = ""
+    if state.get("verification_reason") and "suggested_followup" in state.get("user_input", "").lower():
+        followup_context = f"\nNOTE: This is a follow-up action based on prior result. Original query: {original_user_input}\n"
+
+    prompt_text = cloud_planner_prompt.format(user_input=query) + followup_context
 
     messages = [HumanMessage(content=prompt_text)]
     for turn in dialog[-6:]:  # Last few messages

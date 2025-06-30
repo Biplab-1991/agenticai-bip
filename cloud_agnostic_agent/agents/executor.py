@@ -37,6 +37,7 @@ def request_executor_agent(state: dict) -> dict:
             headers.update(signed)
 
         if method == "POST":
+            print(f"post URL: {url}")
             resp = requests.post(url, headers=headers, data=body)
         else:
             full_url = f"{url}?{body}" if body else url

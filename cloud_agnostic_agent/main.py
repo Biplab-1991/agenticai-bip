@@ -2,18 +2,27 @@ from langgraph.graph import StateGraph, END
 from agents.llm_input import llm_input_agent
 from agents.executor import request_executor_agent
 from agents.response_parser import response_parser_agent
+from agents.verify_completion_agent import verify_completion_agent
+
+def log_state_transition(state):
+    print("\n🔄 Transitioning with state:")
+    for k, v in state.items():
+        if k in {"user_input", "original_user_input", "status", "verification_reason", "final_output"}:
+            print(f"  {k}: {v}")
+    print("-----------------------------")
 
 graph = StateGraph(dict)
 
-# Add all nodes
+# Define nodes
 graph.add_node("llm_input", llm_input_agent)
 graph.add_node("execute_request", request_executor_agent)
 graph.add_node("parse_response", response_parser_agent)
+graph.add_node("verify_completion", verify_completion_agent)
 
-# Entry point
+# Entry
 graph.set_entry_point("llm_input")
 
-# Conditional edge based on retry flag
+# Retry logic from LLM
 graph.add_conditional_edges(
     "llm_input",
     lambda s: "llm_input" if s.get("retry") else "execute_request",
@@ -23,15 +32,46 @@ graph.add_conditional_edges(
     }
 )
 
-# Continue the flow
+# Normal flow
 graph.add_edge("execute_request", "parse_response")
-graph.add_edge("parse_response", END)
+graph.add_edge("parse_response", "verify_completion")
 
-# Compile the graph
+# Decide END or loop
+graph.add_conditional_edges(
+    "verify_completion",
+    lambda s: END if s.get("status") == "done" else "llm_input",
+    {
+        END: END,
+        "llm_input": "llm_input"
+    }
+)
+
+# Compile
 app = graph.compile()
 
 if __name__ == "__main__":
-    user_input = input("Ask any cloud: ")
-    result = app.invoke({"user_input": user_input,"original_user_input": user_input})
-    final = result.get("final_output") or result.get("plan") or result
-    print("\nFinal Answer:", final)
+    while True:
+        user_input = input("👉 Ask anything related to cloud (or type 'exit'): ").strip()
+        if user_input.lower() in {"exit", "quit"}:
+            print("👋 Exiting.")
+            break
+
+        state = {
+            "user_input": user_input,
+            "original_user_input": user_input
+        }
+
+        # Run LangGraph app
+        result = app.invoke(state)
+
+        log_state_transition(result)
+
+        final_output = result.get("final_output") or result.get("plan") or result
+        print("\n✅ Final Answer or Plan:", final_output)
+
+        # Terminate if task is done
+        if result.get("status") == "done":
+            print("✅ Task completed.\n")
+            break
+
+        print("🤖 Let's try again. Could you please rephrase or provide more detail?\n")
