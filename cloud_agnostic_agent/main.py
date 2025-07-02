@@ -19,10 +19,10 @@ graph.add_node("execute_request", request_executor_agent)
 graph.add_node("parse_response", response_parser_agent)
 graph.add_node("verify_completion", verify_completion_agent)
 
-# Entry
+# Entry point
 graph.set_entry_point("llm_input")
 
-# Retry logic from LLM
+# Retry logic for llm_input
 graph.add_conditional_edges(
     "llm_input",
     lambda s: "llm_input" if s.get("retry") else "execute_request",
@@ -32,21 +32,25 @@ graph.add_conditional_edges(
     }
 )
 
-# Normal flow
+# Flow through execution and parsing
 graph.add_edge("execute_request", "parse_response")
 graph.add_edge("parse_response", "verify_completion")
 
-# Decide END or loop
+# Decide whether to end or jump based on next_action
 graph.add_conditional_edges(
     "verify_completion",
-    lambda s: END if s.get("status") == "done" else "llm_input",
+    lambda s: (
+        END if s.get("status") == "done"
+        else s.get("next_action", "llm_input")  # Use next_action if available
+    ),
     {
         END: END,
-        "llm_input": "llm_input"
+        "llm_input": "llm_input",
+        "execute_request": "execute_request"
     }
 )
 
-# Compile
+# Compile the app
 app = graph.compile()
 
 if __name__ == "__main__":
@@ -64,12 +68,15 @@ if __name__ == "__main__":
         # Run LangGraph app
         result = app.invoke(state)
 
+        # Print state transition
         log_state_transition(result)
 
+        # Show final output
         final_output = result.get("final_output") or result.get("plan") or result
         print("\n✅ Final Answer or Plan:", final_output)
+        print(f"✅ Returning status: {result.get('status')}, retry: {result.get('retry')}, reason: {result.get('verification_reason')}")
 
-        # Terminate if task is done
+        # Stop if task is done
         if result.get("status") == "done":
             print("✅ Task completed.\n")
             break

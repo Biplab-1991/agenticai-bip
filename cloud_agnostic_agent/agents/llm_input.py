@@ -127,7 +127,7 @@ User query: {user_input}
         input_variables=["user_input"],
         template=PLANNER_TEMPLATE,
     )
-    #print("state-----",state)
+    print("llm input state-----------------------------------------------------------------------",state)
     query = state["user_input"]
     followup_context = ""
     if state.get("verification_reason") and "suggested_followup" in state.get("user_input", "").lower():

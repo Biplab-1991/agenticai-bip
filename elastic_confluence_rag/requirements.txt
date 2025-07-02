@@ -1,0 +1,9 @@
+langgraph
+langgraph-supervisor
+langchain-core
+langchain-community
+langchain-google-genai
+google-generativeai
+elasticsearch
+python-dotenv
+requests
