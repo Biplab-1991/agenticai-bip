@@ -4,6 +4,8 @@ import json
 import re
 from langchain.prompts import PromptTemplate
 
+#gcloud compute ssh bapon_arp@my-vm --zone=us-central1-c
+
 def clean_json_output(text: str) -> str:
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
