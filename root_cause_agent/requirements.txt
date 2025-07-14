@@ -1,0 +1,9 @@
+langgraph
+langchain
+openai
+requests
+google-cloud-secret-manager
+google-auth
+langchain-google-genai
+google-generativeai
+paramiko

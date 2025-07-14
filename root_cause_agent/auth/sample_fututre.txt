@@ -1,0 +1,21 @@
+from google.oauth2 import service_account
+from google.auth.transport.requests import Request
+import requests
+import json
+
+def get_access_token_from_json(sa_json_str, scopes=None):
+    if scopes is None:
+        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    # Parse JSON string
+    sa_info = json.loads(sa_json_str)
+
+    # Create credentials object from info
+    credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=scopes)
+
+    # Refresh the credentials to get a valid token
+    credentials.refresh(Request())
+
+    return credentials.token
+Once you're ready, the most seamless approach is to allow users to upload their service account JSON securely, 
+store it temporarily in memory (not disk), and pass it into your get_gcp_access_token() function per request.
