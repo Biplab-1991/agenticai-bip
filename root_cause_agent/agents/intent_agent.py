@@ -6,12 +6,24 @@ from langchain_core.runnables import Runnable
 from langchain_core.messages import HumanMessage
 
 class IntentAgentState(dict):
-    pass
+    """State schema used by the Intent Agent graph."""
+    # Input from InputAgent
+    dialog: list
+    final_problem_statement: str
 
-gemini = ChatGoogleGenerativeAI(model="gemini-pro")
+    # Output from Dialogflow tool
+    flow_type: str  # "guided" or "non-guided"
+
+    # Output from RAG/Gemini
+    documentation: list[str]
+
+gemini = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash-preview-05-20",
+        google_api_key="AIzaSyCN0Esg5nooULYxSO7EO82RTmacXnwjzx0"  # Inject via env or secret
+    )
 
 class IntentAgent(Runnable):
-    def invoke(self, state: IntentAgentState) -> IntentAgentState:
+    def invoke(self, state: dict, config: dict = None) -> IntentAgentState:
         dialog = state.get("dialog", [])
         final_problem_statement = state.get("final_problem_statement", "")
 

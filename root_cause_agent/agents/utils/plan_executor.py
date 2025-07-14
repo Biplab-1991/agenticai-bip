@@ -11,7 +11,9 @@ def generate_and_execute_once(state: dict) -> dict:
 
     # Step 1: Generate plan
     supervisor_graph = build_supervisor_agent()
-    state = supervisor_graph.invoke(state)
+    #print(f"satte befor in plan executor:: {state}")
+    supervisor_graph.invoke(state)
+    #print(f"satte after in plan executor:: {state}")
 
     plan = state.get("plan")
     if not plan:

@@ -18,14 +18,25 @@ def run_input_agent():
     }
 
     while state["status"] != "complete":
-        user_input = input("You: ")
-        state["last_input"] = user_input
+        if state.get("next_question"):
+            print(f"🤖 Assistant: {state['next_question']}")
+
+        state["last_input"] = input("You: ")
         state = graph.invoke(state)
+
+        print("🧠 Intermediate Result:", {
+            "status": state["status"],
+            "final_problem_statement": state.get("final_problem_statement", "")
+        })
+
 
     return {
         "dialog": state["dialog"],
+        "status": state["status"],
         "final_problem_statement": state["final_problem_statement"]
     }
+
+
 
 # STEP 2
 def run_intent_agent(input_output):
@@ -81,9 +92,11 @@ def run_executor(supervisor_output):
 if __name__ == "__main__":
     print("🔍 Input Agent Started...")
     input_output = run_input_agent()
+    print(f"output of input:: {input_output}")
 
     print("\n🧠 Intent Agent Analyzing...")
     intent_output = run_intent_agent(input_output)
+    print(f"output of intent:: {intent_output}")
 
     print("\n🧭 Supervisor Agent Generating Plan and Executing...")
     executed_state = generate_and_execute_once(intent_output)

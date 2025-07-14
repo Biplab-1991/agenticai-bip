@@ -3,10 +3,16 @@ from langchain_core.runnables import Runnable
 from langchain_core.messages import HumanMessage
 
 # Initialize Gemini
-gemini = ChatGoogleGenerativeAI(model="gemini-pro")
+gemini = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash-preview-05-20",
+        google_api_key="AIzaSyCN0Esg5nooULYxSO7EO82RTmacXnwjzx0"  # Inject via env or secret
+    )
 
 class SysAdminAgent(Runnable):
-    def invoke(self, state: dict) -> dict:
+    name = "sysadmin_agent"
+
+    def invoke(self, state: dict, config: dict = None) -> dict:
+
         prompt = f"""
 You are a Linux/Cloud SysAdmin assistant.
 

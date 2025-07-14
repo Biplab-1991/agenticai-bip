@@ -5,7 +5,10 @@ from langchain_core.messages import HumanMessage
 from agents.utils.plan_executor import generate_and_execute_once
 
 # Gemini LLM setup
-llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.4)
+llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash-preview-05-20",
+        google_api_key="AIzaSyCN0Esg5nooULYxSO7EO82RTmacXnwjzx0"  # Inject via env or secret
+    )
 
 
 def ask_gemini_if_resolved(state, documentation, plans_attempted, execution_results):

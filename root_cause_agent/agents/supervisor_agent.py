@@ -1,18 +1,19 @@
-from langgraph.prebuilt import create_supervisor
-from langchain_core.messages import HumanMessage
+from langgraph_supervisor import create_supervisor
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-# Agent imports
 from agents.cloud_ops_agent import CloudOpsAgent
 from agents.sysadmin_agent import SysAdminAgent
 from agents.fallback_agent import FallbackAgent
 
-# Initialize Gemini
-gemini = ChatGoogleGenerativeAI(model="gemini-pro")
+# Gemini LLM
+gemini = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-preview-05-20",
+    google_api_key="AIzaSyCN0Esg5nooULYxSO7EO82RTmacXnwjzx0"
+)
 
-# 🔁 Dynamic LLM-based routing logic
-def route_agent(state: dict) -> str:
-    prompt = f"""
+# Dynamic prompt builder
+def routing_prompt(state: dict) -> str:
+    return f"""
 You are a routing agent in a root cause troubleshooting system.
 
 Your job is to decide which specialized agent should handle the user's issue based on:
@@ -46,23 +47,15 @@ Documentation:
 What agent should handle this?
 """
 
-    response = gemini.invoke([HumanMessage(content=prompt)])
-    selection = response.content.strip().lower()
-
-    # Ensure valid result
-    if selection not in ["cloud_ops_agent", "sysadmin_agent", "fallback_agent"]:
-        return "fallback_agent"
-
-    return selection
-
-
-# ✅ Build LangGraph Supervisor Agent
+# Build the Supervisor Agent
 def build_supervisor_agent():
     return create_supervisor(
-        agents={
-            "cloud_ops_agent": CloudOpsAgent(),
-            "sysadmin_agent": SysAdminAgent(),
-            "fallback_agent": FallbackAgent(),
-        },
-        select_next=route_agent,
-    )
+        agents=[
+            CloudOpsAgent(),
+            SysAdminAgent(),
+            FallbackAgent()
+        ],
+        model=gemini,
+        prompt=routing_prompt,  # ✅ Pass function, NOT evaluated string
+        supervisor_name="supervisor_agent"
+    ).compile(name="supervisor_agent")
