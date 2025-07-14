@@ -28,3 +28,50 @@ flow type: guided / non-guided (from dialog api)
 documention : list of steps to trobleshoot the final problem statement
 }
 
+now we need to create one supervisor agent (using langgraph create_supervisor module) in which will pass all the details from input and intent agent
+
+supervisor agent consist of three agent :- cloud ops agent , sys admin agent and fallback agent
+
+now supervisor should have the intelligent to understand in which agent it should go,
+
+ cloud ops agent will create the json in the below format
+ 
+ {
+dialog : will come from input agent
+final problem statement : will come from input agent
+flow type: guided / non-guided (from dialog api)
+documention : steps to trobleshoot the final problem statement,
+plan : {
+	"cloud": "aws" | "gcp" | "azure",
+    "region": "region-name-if-needed",
+    "service": "e.g. ec2, compute, vm, storage",
+    "operation": "short human-friendly action like describe_instance, list_vms",
+    "resource_id": "resource identifier if applicable",
+    "endpoint": "full REST API endpoint (must begin with https://)",
+    "http_method": "GET" | "POST",
+    "request_parameters": "string or JSON object representing request parameters",
+    "auth_type": "sigv4" | "oauth2" | "none"
+	}
+}
+
+sys admin agent is mostly to solve the ssh related problem so we need to modify the below json 
+{
+dialog : will come from input agent
+final problem statement : will come from input agent
+flow type: guided / non-guided (from dialog api)
+documention : steps to trobleshoot the final problem statement,
+plan : {
+	"cloud": "aws" | "gcp" | "azure",
+    "region": "region-name-if-needed",
+    "service": "e.g. ec2, compute, vm, storage",
+    "operation": "short human-friendly action like describe_instance, list_vms",
+    "resource_id": "resource identifier if applicable",
+    "endpoint": "full REST API endpoint (must begin with https://)",
+    "http_method": "GET" | "POST",
+    "request_parameters": "string or JSON object representing request parameters",
+    "auth_type": "sigv4" | "oauth2" | "none"
+	}
+}
+
+fall back agnet :- it will return the user with the steps mentioned in documentation came for intent agen
+
