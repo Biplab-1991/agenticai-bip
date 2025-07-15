@@ -9,10 +9,11 @@ def generate_and_execute_once(state: dict) -> dict:
     Returns the updated state with `plan` and `execution_result` included.
     """
 
+    #print(f"state in plan executor::: {state}")
     # Step 1: Generate plan
-    supervisor_graph = build_supervisor_agent()
-    #print(f"satte befor in plan executor:: {state}")
-    result = supervisor_graph.invoke(state,config={"return_intermediate_steps": True})
+    supervisor = build_supervisor_agent(state)
+    result = supervisor.invoke(state, config={"return_intermediate_steps": True})
+    #result = build_supervisor_agent(state)
     #print(f"result in plan executor:: {result}")
 
     selected_agent = None

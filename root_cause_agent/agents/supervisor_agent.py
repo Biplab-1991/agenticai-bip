@@ -6,6 +6,8 @@ from agents.cloud_ops_agent import CloudOpsAgent
 from agents.sysadmin_agent import SysAdminAgent
 from agents.fallback_agent import FallbackAgent
 
+#global_state = {}
+
 # Gemini LLM
 gemini = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash-preview-05-20",
@@ -14,6 +16,7 @@ gemini = ChatGoogleGenerativeAI(
 
 # Dynamic prompt builder
 def routing_prompt(state: dict) -> str:
+    print("🧪 Got state in routing_prompt:", global_state)
     return f"""
 You are a routing agent in a root cause troubleshooting system.
 
@@ -34,37 +37,32 @@ cloud_ops_agent, sysadmin_agent, fallback_agent
 ---
 
 Dialog:
-{state.get("dialog")}
+{global_state.get("dialog")}
 
 Final Problem Statement:
-{state.get("final_problem_statement")}
+{global_state.get("final_problem_statement")}
 
 Flow Type:
-{state.get("flow_type")}
+{global_state.get("flow_type")}
 
 Documentation:
-{state.get("documentation")}
+{global_state.get("documentation")}
 
 What agent should handle this?
 """
 
 # ✅ Build the Supervisor Agent inside a LangGraph StateGraph
-def build_supervisor_agent():
-    # Create routing supervisor node
-    supervisor_graph = create_supervisor(
+def build_supervisor_agent(state):
+    global global_state
+    #print(f"state inside builder:: {state}")
+    global_state = state
+    return create_supervisor(
         agents=[
             CloudOpsAgent(),
             SysAdminAgent(),
             FallbackAgent()
         ],
         model=gemini,
-        prompt=routing_prompt,  # 🧠 function-based prompt
+        prompt=routing_prompt,
         supervisor_name="supervisor_agent"
-    )
-
-    # Wrap inside a LangGraph StateGraph to capture __steps__
-    builder = StateGraph(dict)
-    builder.add_node("agent", supervisor_graph.compile())
-    builder.set_entry_point("agent")
-    builder.set_finish_point("agent")
-    return builder.compile()
+    ).compile()
