@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
     print("\n🧭 Supervisor Agent Generating First Plan...")
     first_executed_state = generate_and_execute_once(intent_output)
-    print(f"selected_agent: {first_executed_state.get("selected_agent")}")
+    #print(f"selected_agent: {first_executed_state.get("selected_agent")}")
     # ✅ Skip root cause loop if fallback agent was chosen
     if first_executed_state.get("selected_agent") == "fallback_agent":
         print("\n⚠️ Fallback agent used — skipping root cause loop.")
