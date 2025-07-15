@@ -1,5 +1,6 @@
 from langgraph_supervisor import create_supervisor
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.graph import StateGraph
 
 from agents.cloud_ops_agent import CloudOpsAgent
 from agents.sysadmin_agent import SysAdminAgent
@@ -47,15 +48,23 @@ Documentation:
 What agent should handle this?
 """
 
-# Build the Supervisor Agent
+# ✅ Build the Supervisor Agent inside a LangGraph StateGraph
 def build_supervisor_agent():
-    return create_supervisor(
+    # Create routing supervisor node
+    supervisor_graph = create_supervisor(
         agents=[
             CloudOpsAgent(),
             SysAdminAgent(),
             FallbackAgent()
         ],
         model=gemini,
-        prompt=routing_prompt,  # ✅ Pass function, NOT evaluated string
+        prompt=routing_prompt,  # 🧠 function-based prompt
         supervisor_name="supervisor_agent"
-    ).compile(name="supervisor_agent")
+    )
+
+    # Wrap inside a LangGraph StateGraph to capture __steps__
+    builder = StateGraph(dict)
+    builder.add_node("agent", supervisor_graph.compile())
+    builder.set_entry_point("agent")
+    builder.set_finish_point("agent")
+    return builder.compile()

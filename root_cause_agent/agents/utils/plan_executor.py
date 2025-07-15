@@ -12,8 +12,20 @@ def generate_and_execute_once(state: dict) -> dict:
     # Step 1: Generate plan
     supervisor_graph = build_supervisor_agent()
     #print(f"satte befor in plan executor:: {state}")
-    supervisor_graph.invoke(state)
-    #print(f"satte after in plan executor:: {state}")
+    result = supervisor_graph.invoke(state,config={"return_intermediate_steps": True})
+    #print(f"result in plan executor:: {result}")
+
+    selected_agent = None
+
+    messages = result.get("messages", [])
+    if messages:
+        message = messages[0]
+        if hasattr(message, "content"):
+            selected_agent = message.content.strip()
+
+    # ✅ Store in state
+    state["selected_agent"] = selected_agent
+
 
     plan = state.get("plan")
     if not plan:

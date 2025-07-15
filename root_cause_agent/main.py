@@ -4,6 +4,7 @@ from agents.supervisor_agent import build_supervisor_agent
 from agents.executors.cloud_ops_executor import CloudOpsExecutor
 from agents.executors.sysadmin_executor import SysAdminExecutor
 from agents.utils.plan_executor import generate_and_execute_once
+from agents.root_cause_agent import run_root_cause_agent
 
 
 # STEP 1
@@ -98,8 +99,16 @@ if __name__ == "__main__":
     intent_output = run_intent_agent(input_output)
     print(f"output of intent:: {intent_output}")
 
-    print("\n🧭 Supervisor Agent Generating Plan and Executing...")
-    executed_state = generate_and_execute_once(intent_output)
+    print("\n🧭 Supervisor Agent Generating First Plan...")
+    first_executed_state = generate_and_execute_once(intent_output)
+    print(f"selected_agent: {first_executed_state.get("selected_agent")}")
+    # ✅ Skip root cause loop if fallback agent was chosen
+    if first_executed_state.get("selected_agent") == "fallback_agent":
+        print("\n⚠️ Fallback agent used — skipping root cause loop.")
+        executed_state = first_executed_state
+    else:
+        print("\n🔁 Root Cause Agent Starting Evaluation Loop...")
+        executed_state = run_root_cause_agent(first_executed_state)
 
     print("\n✅ Final Output:")
     print({
@@ -107,6 +116,8 @@ if __name__ == "__main__":
         "final_problem_statement": executed_state.get("final_problem_statement"),
         "flow_type": executed_state.get("flow_type"),
         "documentation": executed_state.get("documentation"),
-        "plan": executed_state.get("plan"),
-        "execution_result": executed_state.get("execution_result")
+        "plans_attempted": executed_state.get("plans_attempted"),
+        "execution_results": executed_state.get("execution_results"),
+        "status": executed_state.get("status"),
+        "root_cause": executed_state.get("root_cause")
     })
