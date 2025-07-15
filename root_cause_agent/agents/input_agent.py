@@ -33,6 +33,7 @@ class InputAgent(Runnable):
 
         dialog = state.get("dialog", [])
         last_input = state.get("last_input", "")
+        #dialog.append(last_input)
         #print("🗣️ last_input in InputAgent:", last_input)
 
         prompt = f"""
@@ -81,9 +82,9 @@ Return only valid JSON. Do not wrap in Markdown or explanation.
             if parsed.get("status") == "incomplete":
                 followup = parsed.get("next_question", "")
                 last_input = input(f"🤖 {followup}\n👉 ")
-                # dialog.append({"role": "assistant", "content": followup})
+                dialog.append({"role": "assistant", "content": followup})
                 # dialog.append({"role": "user", "content": last_input})
-            dialog.append(last_input)
+            dialog.append({"role": "user", "content": last_input})
 
             if parsed.get("status") == "complete":
                 return {
