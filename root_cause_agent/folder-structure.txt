@@ -1,17 +1,1 @@
-kma main folder
 
-----agent folder---- i.e combination of llm and tools
-jira-agent.py 
-slack-agent.py
-confluence-agent.py
-vegas-rag-agent.py
-----tools folder---
-jira-tool.py
-slack-tool.py
-confluence-tool.py
-vegas-rag-tool.py
-utils
-
-main
-requirements
-.env
