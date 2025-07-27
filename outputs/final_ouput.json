@@ -1,64 +1,82 @@
-{
-  "dialog": [
-    {
-      "role": "assistant",
-      "content": "Are you encountering any specific issues or errors while trying to perform this, or are you looking for a general guide on how to get started with this task?"
-    },
-    {
-      "role": "user",
-      "content": "no issues only general guide"
-    },
-    {
-      "role": "user",
-      "content": "general steps to start gcp vm using python via api"
-    }
-  ],
-  "final_problem_statement": "The user is looking for general steps on how to start a Google Cloud Platform (GCP) Virtual Machine (VM) using Python via its API.",
-  "flow_type": "non-guided",
-  "documentation": [
-    "1.  **Set up your Python Environment:**",
-    "* Ensure Python 3.x is installed.",
-    "* Install `pip` (Python package installer).",
-    "* (Recommended) Install the `gcloud CLI` for easier authentication and verification.",
-    "2.  **Install the Google Cloud Compute Client Library:**",
-    "* Open your terminal or command prompt and run: `pip install google-cloud-compute`",
-    "3.  **Configure Authentication for your Python Script:**",
-    "* **For Production/Service Accounts:**",
-    "* Create a Google Cloud Service Account in your GCP project.",
-    "* Grant it the necessary IAM role (e.g., `Compute Instance Admin (v1)` or a custom role with `compute.instances.start` permission).",
-    "* Generate and download the JSON key file for the service account.",
-    "* Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to the path of this JSON key file before running your script.",
-    "* **For Local Development (User Credentials):**",
-    "* Authenticate your `gcloud CLI` by running: `gcloud auth application-default login`",
-    "* This will create application default credentials that your Python script can automatically use.",
-    "4.  **Identify the Target VM Details:**",
-    "* Note down your **Google Cloud Project ID**.",
-    "* Note down the **Zone** where your VM instance resides (e.g., `us-central1-a`).",
-    "* Note down the exact **Instance Name** of the VM you wish to start.",
-    "5.  **Verify IAM Permissions:**",
-    "* Confirm that the authenticated identity (service account or user) has the `compute.instances.start` permission for the specific VM instance or at the project level. The `Compute Instance Admin (v1)` role includes this permission.",
-    "6.  **Write the Python Script to Start the VM:**",
-    "* Import the `compute_v1` client library.",
-    "* Initialize the `InstancesClient`.",
-    "* Call the `start` method, providing your `project_id`, `zone`, and `instance_name`.",
-    "* Poll the returned operation object to wait for the VM start process to complete.",
-    "7.  **Execute the Python Script:**",
-    "* Run your Python script from your terminal.",
-    "8.  **Verify the VM Status:**",
-    "* Check the Google Cloud Console (Compute Engine -> VM instances) to see if the VM's status is \"Running.\"",
-    "* Alternatively, use the `gcloud CLI`: `gcloud compute instances describe [INSTANCE_NAME] --zone=[ZONE]` and check the `status` field.",
-    "9.  **Troubleshoot Common Issues (if VM doesn't start):**",
-    "* **Authentication Errors:** Ensure `GOOGLE_APPLICATION_CREDENTIALS` is set correctly or `gcloud auth application-default login` was successful.",
-    "* **Permission Denied:** Double-check IAM roles (step 5). The error message usually indicates the missing permission.",
-    "* **Incorrect VM Details:** Verify that the `project_id`, `zone`, and `instance_name` in your script exactly match your GCP resources.",
-    "* **VM Already Running/Stopped:** If the VM is already running, the API call might not change its state. If it's in a transient state (e.g., `STOPPING`), wait for it to reach a stable state (`TERMINATED` or `RUNNING`) before attempting to start it.",
-    "* **API Quota Exceeded:** While less common for a single VM start, check your project's API quotas in the GCP Console if you're making many requests.",
-    "* **Network/Connectivity:** Ensure your local environment has network access to Google Cloud APIs."
-  ],
-  "plan": null,
-  "execution_result": {
-    "status": "skipped",
-    "output": "Supervisor failed to generate plan.",
-    "error": null
-  }
-}
+import boto3
+import json
+
+# ---------- Configuration ----------
+KENDRA_INDEX_ID = "your-kendra-index-id"
+CLAUDE_MODEL_ID = "anthropic.claude-v2"  # or v3 model if needed
+AWS_REGION = "us-east-1"
+
+# ---------- Clients ----------
+bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
+kendra = boto3.client("kendra", region_name=AWS_REGION)
+
+# ---------- Function ----------
+def query_kendra_and_claude(question):
+    try:
+        # Step 1: Query Kendra
+        kendra_response = kendra.query(
+            IndexId=KENDRA_INDEX_ID,
+            QueryText=question,
+            PageNumber=1
+        )
+
+        # Step 2: Extract top 3 passages
+        passages = []
+        for result in kendra_response.get("ResultItems", [])[:3]:
+            text = result.get("DocumentExcerpt", {}).get("Text", "")
+            if text:
+                passages.append(text)
+
+        context_text = "\n".join(passages)
+
+        # Step 3: Build Claude prompt
+        prompt = f"""
+Human: Using the following context, answer the question concisely.
+
+Context:
+{context_text}
+
+Question:
+{question}
+
+Assistant:
+"""
+
+        body = {
+            "prompt": prompt,
+            "max_tokens_to_sample": 500,
+            "temperature": 0.5,
+            "stop_sequences": ["\n\nHuman:"]
+        }
+
+        # Step 4: Invoke Claude
+        response = bedrock.invoke_model(
+            modelId=CLAUDE_MODEL_ID,
+            body=json.dumps(body),
+            contentType="application/json"
+        )
+
+        result = json.loads(response["body"].read())
+        answer = result.get("completion", "").strip()
+
+        return {
+            "statusCode": 200,
+            "answer": answer
+        }
+
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "error": str(e)
+        }
+
+# ---------- Main ----------
+if __name__ == "__main__":
+    user_question = input("Ask a question: ")
+    result = query_kendra_and_claude(user_question)
+
+    print("\n=== Claude's Answer ===")
+    if result["statusCode"] == 200:
+        print(result["answer"])
+    else:
+        print(f"Error: {result['error']}")
