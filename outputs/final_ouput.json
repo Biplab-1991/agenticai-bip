@@ -1,82 +1,25 @@
-import boto3
-import json
+I have jira tickets in AWS kendra(around 2000 json files). I have bedrock with anthropic model. I have chatbot application as front end and making apis calls to backend accepting queries from end user. The goal of chatbot is to provide information to end user answering relevant information from json documents about tickets and end users can use chatbot for asking analytical related questions like count, how many, how much %age, etc... There can be multiple questions on the same query from end user. it can be like give me ticket information on the ticket and find how many tickets are of same nature? The query can be both analytical and non-analytical. Here are the typical questions. The raw data is in dynamo db and in s3. the json documents(jira tickets) from s3 are ingested to AWS kendra. I also have crawler to scan schema of the table in dynamo db, lambda as connector to pull data from dynamo db and used glue database. using athena query, we can see results from database. Attached python file that was developed so far by using gemini. The application is all about end users raising tickets in the application, reviewers review the ticket and conduct meeting for approval of tickets from business and other stake holders. the tickets from end users are requests to start new project. Once meeting concludes, end suers submit effort estimation for the ticket to be approved. finally, the ticket is moved to done state. the work flow states are draft,open,under review, waiting for approval, approved and done. Your goal is to help me in building logic and code to help chatbot for responding to end users. You cna use the attached file and enhance it. The typical questions from end users are - 1.How many projects are in the next front door review session?
 
-# ---------- Configuration ----------
-KENDRA_INDEX_ID = "your-kendra-index-id"
-CLAUDE_MODEL_ID = "anthropic.claude-v2"  # or v3 model if needed
-AWS_REGION = "us-east-1"
+2.How many projects and what are GFD tickets are in the next front door review session?
 
-# ---------- Clients ----------
-bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
-kendra = boto3.client("kendra", region_name=AWS_REGION)
+3.How many projects are in the following front door review session?
 
-# ---------- Function ----------
-def query_kendra_and_claude(question):
-    try:
-        # Step 1: Query Kendra
-        kendra_response = kendra.query(
-            IndexId=KENDRA_INDEX_ID,
-            QueryText=question,
-            PageNumber=1
-        )
+4.When is the next Front Door review?
 
-        # Step 2: Extract top 3 passages
-        passages = []
-        for result in kendra_response.get("ResultItems", [])[:3]:
-            text = result.get("DocumentExcerpt", {}).get("Text", "")
-            if text:
-                passages.append(text)
+5.What products are being discussed in the next Front Door review?
 
-        context_text = "\n".join(passages)
+6.How many tickets are there for X product (Example- How many tickets are open for VZ Protect How many PDPMO tickets have finished for Home)
 
-        # Step 3: Build Claude prompt
-        prompt = f"""
-Human: Using the following context, answer the question concisely.
+7.How many front door submissions have we received this year?
 
-Context:
-{context_text}
+8.How many front door submissions have we completed in the past month?
 
-Question:
-{question}
+9.Create a status pie chart of front door tickets submitted YTD
 
-Assistant:
-"""
+10.How many tickets have updated comments for the week of xx/xx/xxxx to xx/xx/xxxx
 
-        body = {
-            "prompt": prompt,
-            "max_tokens_to_sample": 500,
-            "temperature": 0.5,
-            "stop_sequences": ["\n\nHuman:"]
-        }
+11.Create a heat map of FD tickets submitted (by directors)
 
-        # Step 4: Invoke Claude
-        response = bedrock.invoke_model(
-            modelId=CLAUDE_MODEL_ID,
-            body=json.dumps(body),
-            contentType="application/json"
-        )
+12.What percent of VCG Projects submitted are requesting TPD PMO Support (excluding Open tickets)
 
-        result = json.loads(response["body"].read())
-        answer = result.get("completion", "").strip()
-
-        return {
-            "statusCode": 200,
-            "answer": answer
-        }
-
-    except Exception as e:
-        return {
-            "statusCode": 500,
-            "error": str(e)
-        }
-
-# ---------- Main ----------
-if __name__ == "__main__":
-    user_question = input("Ask a question: ")
-    result = query_kendra_and_claude(user_question)
-
-    print("\n=== Claude's Answer ===")
-    if result["statusCode"] == 200:
-        print(result["answer"])
-    else:
-        print(f"Error: {result['error']}")
+13.Compare 2023 vs 2024 tickets submitted, provide fun facts
