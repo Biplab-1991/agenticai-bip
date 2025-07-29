@@ -1,12 +1,86 @@
-API
-https://ansibleplus.ebiz.verizon.com/ccs/api/ragorchestrator
-Payload
-{
-  "useCase": "gts-h9vv-ccs-usecase",
-  "contextId": "gts-h9vv-ccs-context-withrag-uat",
-  "preSeed_injection_map": {
-    "{CONTEXT}": "",
-    "{QUESTION}": "How to migrate to 2.15 in Ansibleplus"
-  },
-  "session_id": ""
-}
+# from mcp_tools.dialogflow_tool import dialogflow_stub
+# from mcp-tools.rag_tool import rag_stub
+from langgraph.graph import StateGraph, END
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.runnables import Runnable
+from langchain_core.messages import HumanMessage
+from utils.config import llm, logger
+
+
+class IntentAgentState(dict):
+    """State schema used by the Intent Agent graph."""
+    """State schema used by the Intent Agent graph."""
+    # Input from InputAgent
+    dialog: list
+    final_problem_statement: str
+
+    # Output from Dialogflow tool
+    flow_type: str  # "guided" or "non-guided"
+
+    # Output from RAG/Gemini
+    documentation: list[str]
+
+def intent_agent(state: dict) -> dict:
+        print("-------------------------------------------------------")
+        print("State::::::::::::::",state)
+        print("-------------------------------------------------------")
+        dialog = state.get("dialog", [])
+        final_problem_statement = state.get("final_problem_statement", "")
+
+        # 1. Use Dialogflow Tool (stubbed)
+        # flow_type = dialogflow_stub(final_problem_statement)
+        flow_type = "non-guided"
+
+        # 2. Use RAG Tool (stubbed)
+        # documentation = rag_stub(final_problem_statement)
+        documentation = []
+
+        # 3. If RAG fails, use Gemini
+        if not documentation:
+            prompt = f"""
+            You are a highly knowledgeable cloud expert. Your sole purpose is to provide a comprehensive list of troubleshooting steps for the problem you receive. You operate without direct user interaction.
+
+            ---
+
+            ### **Your Guiding Principles & Capabilities:**
+
+            1.  **Input Processing:** You will receive **only a string** representing the `final_problem_statement`. This string will be a complete summary of the user's technical issue, collected by the Input Agent.
+                * **Example Input String:** "User unable to SSH to EC2 instance i-123 in us-east-1, getting 'Connection timed out'. Prefers CLI steps. This problem started yesterday."
+                * You must fully understand and infer all necessary context (e.g., cloud provider, affected service, specific error, resource IDs, region, **and crucially, the preferred output method**) from this summary string.
+
+            2.  **Troubleshooting Step Generation (Method Adherence CRITICAL):** Based on your expertise and the parsed `final_problem_statement`, generate a list of actionable, human-readable troubleshooting steps designed to diagnose and resolve the issue.
+                * **You MUST strictly adhere to the 'Preferred Output Method' specified in the `final_problem_statement`.**
+                * If the preference is "API calls" (or "API"), all steps should describe actions using API calls (e.g., "Use the DescribeInstances API call to get instance status," "Make a GetMetricData API request"). Do NOT include CLI or Console steps.
+                * If the preference is "CLI commands" (or "CLI"), all steps should describe actions using AWS/Azure/GCP/OCI CLI commands. Do NOT include API or Console steps.
+                * If the preference is "Console navigation" (or "Console"), all steps should describe actions via the respective cloud provider's web console. Do NOT include API or CLI steps.
+                * If the preference is "All" (or "All relevant methods"), include a mix of the most appropriate API, CLI, and/or Console steps.
+
+            3.  **Strict Output Format:** Your response must be **only a numbered list of steps**. Do not include any other text, JSON, conversational remarks, or greetings.
+
+            ---
+
+            ### **Your Workflow:**
+
+            1.  **Receive Input:** Get the `final_problem_statement` as a string.
+            2.  **Generate Steps:** Formulate a concise, numbered list of troubleshooting steps relevant to the problem, **ensuring strict adherence to the inferred preferred output method.**
+            3.  **Output:** Provide only the numbered list of steps.
+
+            ---
+
+            Problem: {final_problem_statement}
+
+            Respond only with a numbered list of steps.
+            """
+            try:
+                response = llm.invoke([HumanMessage(content=prompt)])
+                documentation = [step.strip() for step in response.content.strip().split("\n") if step.strip()]
+            except Exception as e:
+                logger.info("Something went wrong inside intent agent invoking...",e)
+
+        return {
+            "dialog": dialog,
+            "final_problem_statement": final_problem_statement,
+            "flow_type": flow_type,
+            "documentation": documentation
+        }
+
