@@ -1,7 +1,5 @@
-state_tuple = await checkpointer.aget_tuple(thread_id)
-
-if state_tuple:
-    _, previous_state = state_tuple
-    print("Previous state found:", previous_state)
-else:
-    print("No state found for this thread_id.")
+INFO:server:Received input: user_query='vz-pr-data-ce-o,my-vm,us-central1-c,api calls', thread_id='9a530742-c4d1-420f-8471-23928b937ddd'
+2025-07-29 05:58:12.897 | INFO     | main:run_input_intent_agent_server:108 - LangGraph app compiled successfully.
+2025-07-29 05:58:12.897 | INFO     | main:run_input_intent_agent_server:114 - --- Resuming session (thread_id: 9a530742-c4d1-420f-8471-23928b937ddd)
+2025-07-29 05:58:12.900 | ERROR    | main:run_input_intent_agent_server:146 - run_input_intent_agent_server crashed: string indices must be integers, not 'str'
+INFO:server:Agent result: {'status': 'error', 'message': "string indices must be integers, not 'str'", 'thread_id': '', 'dialog': [], 'final_problem_statement': [], 'next_question': 'An unexpected error occurred. Please restart the conversation.'}
