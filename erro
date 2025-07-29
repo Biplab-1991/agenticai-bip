@@ -1,82 +1,14 @@
-async def intent_agent(state: dict) -> dict:
-    print("-------------------------intent agent invoked------------------------------")
-    print("State::::::::::::::", state)
-    print("-------------------------------------------------------")
-    
-    dialog = state.get("dialog", [])
-    final_problem_statement = state.get("final_problem_statement", "")
-    thread_id = state.get("tread_id", "")
+from fastmcp import MultiServerMCPClient
 
-    flow_type = "non-guided"
-    documentation = []
+# Point this to your running AnsiblePlus MCP server
+client = MultiServerMCPClient(
+    servers=["http://localhost:8080/mcp/"]  # Change to deployed URL if not local
+)
 
-    try:
-        # --- Call RAG Tool ---
-        rag_response = await ansibleplus_rag_stub(
-            context="",  # Or "\n".join(dialog) if you want context
-            question=final_problem_statement,
-            session_id=thread_id
-        )
-
-        if rag_response and isinstance(rag_response, dict) and "error" not in rag_response:
-            score = rag_response.get("score", 0)
-            answer = rag_response.get("answer", "")
-
-            if score >= 70 and answer:
-                documentation = [f"Step {i+1}. {line.strip()}"
-                                 for i, line in enumerate(answer.strip().split("\n"))
-                                 if line.strip()]
-                return {
-                    "dialog": dialog,
-                    "final_problem_statement": final_problem_statement,
-                    "flow_type": flow_type,
-                    "documentation": documentation
-                }
-
-    except Exception as e:
-        logger.error(f"RAG call failed: {e}")
-        return {
-            "status": "error",
-            "error": f"RAG call failed: {str(e)}"
-        }
-
-    # --- Fallback to Gemini ---
-    try:
-        prompt = f"""
-        You are a highly knowledgeable cloud expert. Your sole purpose is to provide a comprehensive list of troubleshooting steps for the problem you receive. You operate without direct user interaction.
-
-        ---
-
-        ### **Your Guiding Principles & Capabilities:**
-
-        1.  **Input Processing:** You will receive **only a string** representing the `final_problem_statement`.
-            * Example: "User unable to SSH to EC2 instance i-123 in us-east-1, getting 'Connection timed out'. Prefers CLI steps."
-            * Parse the cloud provider, service, region, error, resource IDs, and preferred output method from this.
-
-        2.  **Troubleshooting Step Generation:** Based on the parsed problem, generate a numbered list of actionable steps.
-            * **Use only the preferred method** (API, CLI, Console, or All).
-
-        3.  **Strict Output Format:** Your response must be **only a numbered list**. No extra text or JSON.
-
-        ---
-
-        Problem: {final_problem_statement}
-
-        Respond only with a numbered list of steps.
-        """
-        response = llm.invoke([HumanMessage(content=prompt)])
-        documentation = [step.strip() for step in response.content.strip().split("\n") if step.strip()]
-
-        return {
-            "dialog": dialog,
-            "final_problem_statement": final_problem_statement,
-            "flow_type": flow_type,
-            "documentation": documentation
-        }
-
-    except Exception as e:
-        logger.error(f"Gemini fallback failed: {e}")
-        return {
-            "status": "error",
-            "error": f"Gemini fallback failed: {str(e)}"
-        }
+async def ansibleplus_rag_stub(context: str, question: str, session_id: str):
+    result = await client.query_ansibleplus_rag(
+        context=context,
+        question=question,
+        session_id=session_id
+    )
+    return result
