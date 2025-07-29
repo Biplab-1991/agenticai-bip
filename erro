@@ -1,45 +1,32 @@
-	
-Error: Unprocessable Entity
-
-Response body
-Download
-{
-  "detail": [
-    {
-      "type": "missing",
-      "loc": [
-        "body"
-      ],
-      "msg": "Field required",
-      "input": null
-    }
-  ]
-}
-
-
-# server.py
-from fastapi import FastAPI
-import asyncio
-from main import input_intent_server
+from fastapi import FastAPI, Body
 from pydantic import BaseModel
-# Define the Pydantic model
+from main import input_intent_server
+import asyncio
+
+# Define the request model
 class InputIntentBody(BaseModel):
-    user_query: str  # Example: Expects a required string field named 'user_query'
-    thread_id: str | None = None # Example: Expects an optional string field named 'thread_id'
-    # ... add all other expected fields and their types
+    user_query: str
+    thread_id: str | None = None
 
 app = FastAPI(title="input_intent API")
 
 @app.post("/input-intent")
-def trigger_input_intent(body: InputIntentBody): # <-- Change this line
-    print(f"body:: {body}") # Use f-string for better print
+def trigger_input_intent(
+    body: InputIntentBody = Body(
+        ..., 
+        example={
+            "user_query": "I am not able to access my vm",
+            "thread_id": "xyz-123"
+        }
+    )
+):
+    print(f"Received body: {body}")
     try:
         result = asyncio.run(input_intent_server(body))
-        # ... rest of your code
         return {
             "dialog": result.get("dialog", []),
             "status": result.get("status", "unknown"),
-            "final_problem_statement": result.get("final_problem_statement",[]),
+            "final_problem_statement": result.get("final_problem_statement", []),
             "flow_type": result.get("flow_type", "non-guided"),
             "documentation": result.get("documentation", []),
             "next_question": result.get("next_question", ""),
@@ -50,6 +37,3 @@ def trigger_input_intent(body: InputIntentBody): # <-- Change this line
             "status": "error",
             "message": str(e)
         }
-
-
-{"user_query":"I am not able to access my vm"}
