@@ -1,62 +1,15 @@
-import asyncio
-import logging
-import os
-import httpx
+from fastmcp import MultiServerMCPClient
 
-from fastmcp import FastMCP
+# Point this to your running AnsiblePlus MCP server
+client = MultiServerMCPClient(
+    servers=["http://localhost:8080"]  # Change to deployed URL if not local
+)
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(format="[%(levelname)s]: %(message)s", level=logging.INFO)
-
-mcp = FastMCP("AnsiblePlus RAG MCP Server")
-
-API_URL = "https://ansibleplus.ebiz.verizon.com/ccs/api/ragorchestrator"
-USE_CASE = "gts-h9vv-ccs-usecase"
-CONTEXT_ID = "gts-h9vv-ccs-context-withrag-uat"
-
-@mcp.tool()
-async def query_ansibleplus_rag(context: str, question: str, session_id: str) -> dict:
-    """Query the AnsiblePlus RAG Orchestrator API with provided context and question.
-
-    Args:
-        context: The conversational or document context ({CONTEXT}).
-        question: The problem statement or query to resolve ({QUESTION}).
-        session_id: The session or thread ID for tracking.
-
-    Returns:
-        Response JSON from AnsiblePlus RAG API.
-    """
-    payload = {
-        "useCase": USE_CASE,
-        "contextId": CONTEXT_ID,
-        "preSeed_injection_map": {
-            "{CONTEXT}": context,
-            "{QUESTION}": question
-        },
-        "session_id": session_id
-    }
-
-    logger.info(f">>> Invoking AnsiblePlus RAG API with session_id: {session_id}")
-
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        try:
-            response = await client.post(API_URL, json=payload)
-            response.raise_for_status()
-            logger.info(">>> RAG API call successful.")
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error from RAG API: {e.response.status_code} - {e.response.text}")
-            return {"error": f"RAG API HTTP error: {e.response.status_code}"}
-        except Exception as e:
-            logger.exception("Unexpected error calling AnsiblePlus RAG API.")
-            return {"error": str(e)}
-
-if __name__ == "__main__":
-    logger.info(f"Starting AnsiblePlus MCP server on port {os.getenv('PORT', 8080)}")
-    asyncio.run(
-        mcp.run_async(
-            transport="streamable-http",
-            host="0.0.0.0",
-            port=int(os.getenv("PORT", 8080))
-        )
+# Stub to call AnsiblePlus RAG Tool
+async def ansibleplus_rag_stub(context: str, question: str, session_id: str):
+    result = await client.query_ansibleplus_rag(
+        context=context,
+        question=question,
+        session_id=session_id
     )
+    return result
