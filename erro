@@ -1,1 +1,101 @@
-{"response": "{\"message\": \"Okay, I can help you with that. Here's a breakdown of how to migrate to Ansible 2.15 in AnsiblePlus, focusing on the key information from the provided documents:\\n\\n**Migrating to Ansible 2.15 in AnsiblePlus**\\n\\nTo migrate to Ansible 2.15 in AnsiblePlus, here's what you need to consider:\\n\\n1.  **Version Support and End-of-Life:**\\n\\n    *   AnsiblePlus now supports the latest version of Ansible via the All-In-One plugin.\\n    *   Ansible versions 2.11 and 2.13 will be eliminated on June 6, 2025.\\n    *   Migrate jobs to utilize version 2.18 (the default moving forward) or 2.15 (being deprecated by end of 2025).\\n\\n2.  **Plugin Migration:**\\n\\n    *   The CICD V3 and Playbook V3 plugins will be deprecated on June 6, 2025.\\n    *   Migrate these jobs to the All-In-One plugin.\\n\\n3.  **Documentation:**\\n\\n    *   The \\\"Ansible Version and Plugin End of Life\\\" document has further information.\\n    *   Review the \\\"Migration to the All-In-One Plugin\\\" documentation when migrating to the All-In-One plugin.\\n\\n4.  **Support:**\\n\\n    *   Contact the AnsiblePlus support team at oneansibleplus-support@verizon.com or via the #help-ansibleplus Slack channel (if you have any Ansible related questions).\\n\\n**Summary**\\n\\nTo migrate to Ansible 2.15 in AnsiblePlus it's important to upgrade existing jobs from older plugins to the All-in-One plugin due to end-of-life plans for older versions such as 2.11 and 2.13 by June 6, 2025, and 2.15 by end of 2025. Correspondingly, CICD V3 and Playbook V3 plugins will also be deprecated. Instructions for migrating to All-in-One plugin are available in the \\\"Migration to the All-In-One Plugin\\\" documentation. Additionally, contact the AnsiblePlus support team at oneansibleplus-support@verizon.com or via the #help-ansibleplus Slack channel for queries.\\n\", \"references\": [\"https://oneconfluence.verizon.com/display/AIS/Copy%2B-%2BAnsible%2B2.7%2BMigration\", \"https://oneconfluence.verizon.com/display/AIS/AnsiblePlus%2BDocs%2Bfrom%2Bother%2Bspaces\", \"https://oneconfluence.verizon.com/display/CLOUD/Public%2BCloud%2BForum%2B-%2BImportant%2BAnnouncements\", \"https://oneconfluence.verizon.com/display/AIS/Ansible%2B2.7%2BMigration\", \"https://oneconfluence.verizon.com/display/CLOUD/Cloud%2BForum%2BAnnouncements%2B-%2B5.14.2025\", \"https://oneconfluence.verizon.com/display/CLOUD/Cloud%2BForum%2BAnnouncements%2B-%2B5.7.2025\", \"https://oneconfluence.verizon.com/display/CLOUD/Cloud%2BForum%2BAnnouncements%2B-%2B1.12.2024\", \"https://oneconfluence.verizon.com/display/AIS/Ansible%2BPlus\", \"https://oneconfluence.verizon.com/display/AIS/Copy%2B-%2BAnsible%2B2.3%2Bto%2B2.7%2Bmigration%2Bissues%2Bwith%2Bresolutions\", \"https://oneconfluence.verizon.com/display/AIS/Version%2BMigration%2BIssues%2Bwith%2BResolutions\"]}"}
+# from mcp_tools.dialogflow_tool import dialogflow_stub
+# from mcp-tools.rag_tool import rag_stub
+from langgraph.graph import StateGraph, END
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.runnables import Runnable
+from langchain_core.messages import HumanMessage
+from utils.config import llm, logger
+from utils.rag_client import ansibleplus_rag_stub
+
+
+class IntentAgentState(dict):
+    """State schema used by the Intent Agent graph."""
+    """State schema used by the Intent Agent graph."""
+    # Input from InputAgent
+    dialog: list
+    final_problem_statement: str
+
+    # Output from Dialogflow tool
+    flow_type: str  # "guided" or "non-guided"
+
+    # Output from RAG/Gemini
+    documentation: list[str]
+
+async def intent_agent(state: dict) -> dict:
+        print("-------------------------intent agent invoked------------------------------")
+        print("State::::::::::::::",state)
+        print("-------------------------------------------------------")
+        dialog = state.get("dialog", [])
+        final_problem_statement = state.get("final_problem_statement", "")
+        thread_id = state.get("tread_id", "")
+
+        # 1. Use Dialogflow Tool (stubbed)
+        # flow_type = dialogflow_stub(final_problem_statement)
+        flow_type = "non-guided"
+
+        # 2. Use RAG Tool (stubbed)
+        # documentation = rag_stub(final_problem_statement)
+        documentation = []
+
+        # 1. Call MCP-based RAG tool first
+        try:
+            rag_response = await ansibleplus_rag_stub(
+                context="", #"\n".join(dialog)
+                question=final_problem_statement,
+                session_id=thread_id
+            )
+            if rag_response and isinstance(rag_response, dict):
+                if "error" not in rag_response:
+                    documentation = rag_response.get("answer", "").split("\n")
+        except Exception as e:
+            logger.error("RAG call failed:", e)
+
+        # 3. If RAG fails, use Gemini
+        if not documentation:
+            prompt = f"""
+            You are a highly knowledgeable cloud expert. Your sole purpose is to provide a comprehensive list of troubleshooting steps for the problem you receive. You operate without direct user interaction.
+
+            ---
+
+            ### **Your Guiding Principles & Capabilities:**
+
+            1.  **Input Processing:** You will receive **only a string** representing the `final_problem_statement`. This string will be a complete summary of the user's technical issue, collected by the Input Agent.
+                * **Example Input String:** "User unable to SSH to EC2 instance i-123 in us-east-1, getting 'Connection timed out'. Prefers CLI steps. This problem started yesterday."
+                * You must fully understand and infer all necessary context (e.g., cloud provider, affected service, specific error, resource IDs, region, **and crucially, the preferred output method**) from this summary string.
+
+            2.  **Troubleshooting Step Generation (Method Adherence CRITICAL):** Based on your expertise and the parsed `final_problem_statement`, generate a list of actionable, human-readable troubleshooting steps designed to diagnose and resolve the issue.
+                * **You MUST strictly adhere to the 'Preferred Output Method' specified in the `final_problem_statement`.**
+                * If the preference is "API calls" (or "API"), all steps should describe actions using API calls (e.g., "Use the DescribeInstances API call to get instance status," "Make a GetMetricData API request"). Do NOT include CLI or Console steps.
+                * If the preference is "CLI commands" (or "CLI"), all steps should describe actions using AWS/Azure/GCP/OCI CLI commands. Do NOT include API or Console steps.
+                * If the preference is "Console navigation" (or "Console"), all steps should describe actions via the respective cloud provider's web console. Do NOT include API or CLI steps.
+                * If the preference is "All" (or "All relevant methods"), include a mix of the most appropriate API, CLI, and/or Console steps.
+
+            3.  **Strict Output Format:** Your response must be **only a numbered list of steps**. Do not include any other text, JSON, conversational remarks, or greetings.
+
+            ---
+
+            ### **Your Workflow:**
+
+            1.  **Receive Input:** Get the `final_problem_statement` as a string.
+            2.  **Generate Steps:** Formulate a concise, numbered list of troubleshooting steps relevant to the problem, **ensuring strict adherence to the inferred preferred output method.**
+            3.  **Output:** Provide only the numbered list of steps.
+
+            ---
+
+            Problem: {final_problem_statement}
+
+            Respond only with a numbered list of steps.
+            """
+            try:
+                response = llm.invoke([HumanMessage(content=prompt)])
+                documentation = [step.strip() for step in response.content.strip().split("\n") if step.strip()]
+            except Exception as e:
+                logger.info("Something went wrong inside intent agent invoking...",e)
+
+        return {
+            "dialog": dialog,
+            "final_problem_statement": final_problem_statement,
+            "flow_type": flow_type,
+            "documentation": documentation
+        }
+
