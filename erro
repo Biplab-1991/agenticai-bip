@@ -1,31 +1,34 @@
-tool recieved
--- query_ansibleplus_rag
+{"response": "{\"message\": \"Okay, here's a breakdown of how to troubleshoot your EC2 instance startup issue in AWS us-east-1, focusing on API calls, based on the provided documents.\\n\\n**Checking Instance Status & Starting via AWS CLI (API)**\\n\\nSince you prefer using the API, you can use the AWS CLI. First, verify the instance's current state. The key is to use a server in the *same* AWS account and region (us-east-1 in your case).\\n\\n1.  **Check Instance Status:**\\n\\n    ```bash\\n    aws ec2 describe-instances --region us-east-1 --instance-ids i-xxxxxxxxxxxxx\\n    ```\\n\\n    Replace `i-xxxxxxxxxxxxx` with your actual instance ID. Examine the output, specifically the `\\\"State\\\"` section. Common states to look for:\\n\\n    *   `pending`: Instance is starting.\\n    *   `running`: Instance is running.\\n    *   `stopped`: Instance is stopped. (This is expected *before* you try to start it).\\n    *   `shutting-down`, `terminated`: Instance is being shut down or is terminated, meaning you can't start it.\\n    *   `stopping`: Instance is in the process of stopping\\n    *   `Unknown`: The state of the instance could not be determined.\\n\\n2.  **Start the Instance (if stopped):**\\n\\n    If the instance is in the `stopped` state, use the following command to start it:\\n\\n    ```bash\\n    aws ec2 start-instances --region us-east-1 --instance-ids i-xxxxxxxxxxxxx\\n    ```\\n\\n    Again, replace `i-xxxxxxxxxxxxx` with your instance ID. After a minute or two, re-run the `describe-instances` command to check if the state changes to `running`.\\n\\n3.  **Troubleshooting if the Instance Fails to Start**\\n\\n    *   **Insufficient Capacity:** If the instance fails to start and the error mentions \\\"InsufficientInstanceCapacity,\\\" AWS might not have enough resources in that Availability Zone to fulfill your request. Try again later, or consider launching in a different Availability Zone within us-east-1.\\n\\n    *   **Instance Type Issues:** While unlikely if it's worked before, double-check that the instance type you're using (e.g., `t2.micro`, `m5.large`) is still supported and available in us-east-1.\\n\\n    *   **Underlying Issues:** Though less common, there might be underlying AWS infrastructure issues. Check the AWS Service Health Dashboard for any reported problems in the us-east-1 region.\\n\\n    *   **Security Group or Network Issues:** Although less likely if it previously worked, confirm that the security group associated with the instance allows the necessary inbound traffic (e.g., SSH on port 22, RDP on port 3389) from your location. Also, verify that the subnet and route tables are correctly configured.\\n\\n    *   **Orchestra Tool:** You can collect information regarding your EC2 instance via the Orchestra Tool so you can check the status of the server.\\n\\n**VZ-Specific Considerations and the Public Cloud Chatbot**\\n\\n*   **Public Cloud Chatbot:** The \\\"Public Cloud Assistant - ChatBot\\\" document mentions it can assist with login issues and supports many AWS Services. You could try using the chatbot to troubleshoot the EC2 instance start problem.  Access it at `https://onecloud.verizon.com/` or `https://onecloud.ebiz.verizon.com/`.\\n\", \"references\": [\"https://oneconfluence.verizon.com/display/AIS/Public%2BCloud%2BAssistant%2B-%2BChatBot\", \"https://oneconfluence.verizon.com/display/GMPC/CCO%2BOperations%2Bfor%2BOCI%2Bportal%2B%28oci.verizon.com%29\", \"https://oneconfluence.verizon.com/display/AIS/Login%2BFailure%2BTroubleshooting\", \"https://oneconfluence.verizon.com/display/AIS/Snowball%2BEdge%2BActivation%2Band%2BDataTransfer%2B-%2BField%2BGuide\"]}"}
 
-from langchain_mcp_adapters.client import MultiServerMCPClient
+if rag_response and isinstance(rag_response, dict) and "error" not in rag_response:
+                rag_answer = rag_response.get("answer", "").strip()
+                print(f"rag_answer::: {rag_answer}")
+                if rag_answer:
+                    # 2. Ask Gemini to rate how well the RAG answer solves the problem
+                    eval_prompt = f"""
+                    You are an evaluator. A troubleshooting assistant has generated a response to the user's cloud issue.
 
-# Point this to your running AnsiblePlus MCP server
-client = MultiServerMCPClient({
-    "ansibleplus": {
-        "url": "http://localhost:8080/mcp/",
-        "transport": "streamable_http"
-    }
-})
+                    ---
+                    **Final Problem Statement:**
+                    {final_problem_statement}
 
-async def ansibleplus_rag_stub(context: str, question: str, session_id: str):
-    try:
-        print(f"tool invoked")
-        tools = await client.get_tools()
-        print("tool recieved")
-        for tool in tools:
-            print("--",tool.name)
-        response = await client.query(
-            tool="ansibleplus.query_ansibleplus_rag",
-            input={
-                "context": context,
-                "question": question,
-                "session_id": session_id
-            }
-        )
-        return response
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+                    **RAG Answer:**
+                    {rag_answer}
+
+                    ---
+                    On a scale of 0 to 100, how well does the RAG answer directly solve or address the final problem statement?
+
+                    Only respond with a number between 0 and 100.
+                    """
+                    try:
+                        score_response = llm.invoke([HumanMessage(content=eval_prompt)])
+                        score_str = score_response.content.strip()
+                        print(f"score_str::: {score_str}")
+                        score = int(''.join(filter(str.isdigit, score_str)))
+                    except Exception as eval_err:
+                        logger.warning("RAG evaluation by LLM failed: %s", eval_err)
+                        score = 0
+                    print(f"score::: {score}")
+                    if score >= 70:
+                        documentation = rag_answer.split("\n")
+                        source = "rag"
