@@ -1,79 +1,33 @@
-async def run_input_intent_agent_server(input):
-    
-    async with AsyncVegasSaver.execute() as checkpointer:
+# server.py
+from fastapi import FastAPI
+import asyncio
+from main import input_intent_server
+from pydantic import BaseModel
+# Define the Pydantic model
+class InputIntentBody(BaseModel):
+    user_query: str  # Example: Expects a required string field named 'user_query'
+    thread_id: str | None = None # Example: Expects an optional string field named 'thread_id'
+    # ... add all other expected fields and their types
 
-        """
-        Runs the interactive console chat loop with the provided LangGraph app.
-        """
-        try:
-            current_session_state = {
-                "last_input": "",
-                "thread_id": "",
-                "dialog": []
-            }
+app = FastAPI(title="input_intent API")
 
-            # Define the graph
-            graph = StateGraph(InputAgentState)
-
-            # Define nodes
-            graph.add_node("input", input_agent)
-            graph.add_node("intent", intent_agent)
-
-            # Entry point
-            graph.set_entry_point("input")
-
-            graph.add_conditional_edges(
-                "input",
-                lambda s: "intent" if s.get("status") == "complete" else "input",
-                {
-                    "input": "input",
-                    "intent": "intent"
-                }
-            )
-
-            # Define the edge from 'intent' to END
-            graph.add_edge("intent", END)
-
-            # Compile the app with a checkpointer for state persistence
-            app = graph.compile(checkpointer=checkpointer)
-            logger.info("LangGraph conversation app compiled successfully.")
-            # Removed: Check for GOOGLE_API_KEY environment variable here.
-            # The LLM initialization in utils/config.py will handle its absence.
-
-            # Generate a unique thread ID for this conversation session
-            user_input = input.user_query
-            thread_id = ""
-            if "thread_id" in input:
-                thread_id = input["thread_id"]
-                print(f"--- Starting with existing conversation session (ID: {thread_id})")
-            else:
-                thread_id = str(uuid.uuid4())
-                print(f"--- Starting new conversation session (ID: {thread_id})")
-
-            # Update the state with the new user input for the current turn.
-            current_session_state["last_input"] = user_input
-            current_session_state["thread_id"] = thread_id
-            #current_session_state["dialog"].append(user_input)
-            
-            # Ensure 'messages' list exists and append user message for LLM context
-            if "messages" not in current_session_state or current_session_state["messages"] is None:
-                current_session_state["messages"] = []
-            current_session_state["messages"].append({"role": "user", "content": user_input})
-
-            # Invoke the LangGraph app with the updated current state and thread_id
-            # This will run one or more nodes until a conditional edge leads to END or a loop.
-            result = await app.ainvoke(current_session_state, config={"configurable": {"thread_id": thread_id}})
-
-            # Update our `current_session_state` with the final state from this invocation.
-            current_session_state = result
-
-            print("result::::",result)
-            return result
-
-                
-
-        except Exception as e:
-            logger.error(f"something went wrong inside run_input_intent_agent: {e}", exc_info=True)
-            print(f"\nAgent: An unexpected error occurred: {e}. Please restart the conversation.")
-            # Decide how to handle the state on a critical error (e.g., reset, save for debugging)
-            # For now, just print and let the loop potentially continue or exit.
+@app.post("/input-intent")
+def trigger_input_intent(body: InputIntentBody): # <-- Change this line
+    print(f"body:: {body}") # Use f-string for better print
+    try:
+        result = asyncio.run(input_intent_server(body))
+        # ... rest of your code
+        return {
+            "dialog": result.get("dialog", []),
+            "status": result.get("status", "unknown"),
+            "final_problem_statement": result.get("final_problem_statement",[]),
+            "flow_type": result.get("flow_type", "non-guided"),
+            "documentation": result.get("documentation", []),
+            "next_question": result.get("next_question", ""),
+            "thread_id": result.get("thread_id", "")
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
