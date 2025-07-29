@@ -1,5 +1,41 @@
-INFO:server:Received input: user_query='vz-pr-data-ce-o,my-vm,us-central1-c,api calls', thread_id='9a530742-c4d1-420f-8471-23928b937ddd'
-2025-07-29 05:58:12.897 | INFO     | main:run_input_intent_agent_server:108 - LangGraph app compiled successfully.
-2025-07-29 05:58:12.897 | INFO     | main:run_input_intent_agent_server:114 - --- Resuming session (thread_id: 9a530742-c4d1-420f-8471-23928b937ddd)
-2025-07-29 05:58:12.900 | ERROR    | main:run_input_intent_agent_server:146 - run_input_intent_agent_server crashed: string indices must be integers, not 'str'
-INFO:server:Agent result: {'status': 'error', 'message': "string indices must be integers, not 'str'", 'thread_id': '', 'dialog': [], 'final_problem_statement': [], 'next_question': 'An unexpected error occurred. Please restart the conversation.'}
+state_data = None
+
+try:
+    state = await checkpointer.aget(thread_id)
+
+    # Debug log what was returned
+    print("Previous state found:", state)
+
+    # Handle tuple or raw dict
+    if isinstance(state, tuple) and len(state) == 2:
+        _, state_data = state
+    elif isinstance(state, dict):
+        state_data = state
+    elif isinstance(state, str):
+        import json
+        try:
+            state_data = json.loads(state)
+        except json.JSONDecodeError:
+            print("Failed to parse JSON from state string:", state)
+    else:
+        print("Unexpected state format:", type(state), state)
+
+except Exception as e:
+    logger.error(f"Error retrieving previous state: {e}", exc_info=True)
+
+if state_data:
+    print("Restored previous session state")
+    current_session_state = state_data
+else:
+    print("No valid previous state found for this thread_id. Starting fresh.")
+    current_session_state = {
+        "last_input": "",
+        "thread_id": "",
+        "dialog": [],
+        "messages": []
+    }
+
+# Update session with current input
+current_session_state["last_input"] = input.user_query
+current_session_state["thread_id"] = thread_id
+current_session_state["messages"].append({"role": "user", "content": input.user_query})
