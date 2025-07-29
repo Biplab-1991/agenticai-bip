@@ -1,54 +1,836 @@
-def input_agent(state: dict) -> dict:
-    dialog = state.get("dialog", [])
-    last_input = state.get("last_input", "")
-
-    prompt = f""" 
-    [your same prompt here... truncated for brevity]
-    Dialog so far:
-    {dialog}
-
-    New input from user:
-    {last_input}
-    """
-    
-    try:
-        response = llm.invoke([HumanMessage(content=prompt)])
-        raw_output = response.content.strip()
-
-        # Log raw output for debugging
-        logger.info(f"🔎 Gemini raw output: {raw_output}")
-
-        # Try to extract JSON content
-        if "```json" in raw_output:
-            cleaned = raw_output.split("```json")[-1].split("```")[0].strip()
-        elif raw_output.startswith("{") and raw_output.endswith("}"):
-            cleaned = raw_output
-        else:
-            raise ValueError("No valid JSON block found in Gemini response")
-
-        parsed = json.loads(cleaned)
-
-        # Append messages
-        dialog.append({"role": "user", "content": last_input})
-        if parsed.get("status") == "incomplete":
-            dialog.append({"role": "assistant", "content": parsed.get("next_question", "")})
-
-        return {
-            "dialog": dialog,
-            "final_problem_statement": parsed.get("final_problem_statement", ""),
-            "status": parsed.get("status", "incomplete"),
-            "next_question": parsed.get("next_question", ""),
-            "last_input": ""
-        }
-
-    except Exception as e:
-        logger.error("⚠️ Failed to parse Gemini response", exc_info=True)
-        dialog.append({"role": "user", "content": last_input})
-        return {
-            "dialog": dialog,
-            "status": "error",
-            "message": f"Gemini returned invalid output. Error: {str(e)}",
-            "final_problem_statement": "",
-            "next_question": "",
-            "last_input": ""
-        }
+/apps/opt/application/onecloud/nova-agenticai-p3/agents/input_intent $ source venv/bin/activate
+(venv) /apps/opt/application/onecloud/nova-agenticai-p3/agents/input_intent $ uvicorn server:app --reload
+INFO:     Will watch for changes in these directories: ['/apps/opt/application/onecloud/nova-agenticai-p3/agents/input_intent']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [22119] using StatReload
+2025-07-29 03:58:37.755 | INFO     | pyvegas.core.settings.loader:get_settings:254 - --- Initializing 'pyvegas' settings ---
+2025-07-29 03:58:37.755 | INFO     | pyvegas.core.settings.loader:_load_dotenv_file:111 - ✅ Found environment file to load: /apps/opt/application/onecloud/nova-agenticai-p3/agents/input_intent/.env
+2025-07-29 03:58:37.759 | INFO     | pyvegas.core.settings.yaml_loaders:_load_dotenv_settings:459 - Environment variables from '/apps/opt/application/onecloud/nova-agenticai-p3/agents/input_intent/.env' also loaded into os.environ (override enabled).
+2025-07-29 03:58:37.759 | INFO     | pyvegas.core.settings.loader:_determine_environment:74 - Read 'ENVIRONMENT=test' from OS.
+2025-07-29 03:58:37.759 | INFO     | pyvegas.core.settings.loader:_determine_environment:79 - ENVIRONMENT variable found in .env file: 'test'. Overriding OS/default.
+2025-07-29 03:58:37.833 | INFO     | pyvegas.core.settings.yaml_loaders:_resolve_user_config_path:370 - No user configuration file found after checking all potential sources. Proceeding without user YAML configuration.
+2025-07-29 03:58:37.846 | SUCCESS  | pyvegas.core.settings.loader:get_settings:311 - ✅ 'pyvegas' Settings initialized successfully for environment: 'test' (took 0.092 seconds).
+INFO:     Started server process [22121]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+body:: user_query='I am not able to access my vm' thread_id=None
+--- Starting new conversation session (ID: e2b25761-61c1-4382-858a-cd4690746eb6)
+2025-07-29 03:59:29.274 | INFO     | main:run_input_intent_agent_server:108 - LangGraph conversation app compiled successfully.
+2025-07-29 03:59:30.642 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+  "dialog": [
+    "I am not able to access my vm"
+  ],
+  "final_problem_statement": "Cloud Provider: N/A, Affected Service: N/A, Specific Problem/Error Message/Symptom: Not able to access VM, Relevant Resource ID(s): N/A, Region/Availability Zone: N/A, Action Attempted: Accessing the VM, Contextual Details: N/A, Project name: N/A, Preferred Output Method: N/A",
+  "status": "incomplete",
+  "next_question": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+}
+```
+2025-07-29 03:59:32.625 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+  "dialog": [
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    }
+  ],
+  "final_problem_statement": "Cloud Provider: N/A, Affected Service: VM, Specific Problem/Error Message/Symptom: Not able to access VM, Relevant Resource ID(s): N/A, Region/Availability Zone: N/A, Action Attempted: Accessing VM, Contextual Details: N/A, Preferred Output Method: N/A",
+  "status": "incomplete",
+  "next_question": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+}
+```
+2025-07-29 03:59:36.695 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+  "dialog": [
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    }
+  ],
+  "final_problem_statement": "The user is encountering an issue where they are unable to access their VM. Cloud Provider: N/A, Affected Service: N/A, Specific Problem / Error Message / Symptom: Unable to access VM, Relevant Resource ID(s): N/A, Region / Availability Zone: N/A, Action Attempted: Accessing the VM, Contextual Details: N/A, Project name: N/A, Preferred Output Method: N/A.",
+  "status": "incomplete",
+  "next_question": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+}
+```
+2025-07-29 03:59:42.225 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+  "dialog": [
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user
+2025-07-29 03:59:42.226 | ERROR    | agents.input_agent:input_agent:110 - ⚠️ Failed to parse Gemini response
+2025-07-29 03:59:47.559 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+  "dialog": [
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user
+2025-07-29 03:59:47.559 | ERROR    | agents.input_agent:input_agent:110 - ⚠️ Failed to parse Gemini response
+2025-07-29 03:59:53.754 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+  "dialog": [
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": ""
+    },
+    {
+      "role": "assistant",
+      "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user",
+      "content": "I am not able to access my vm"
+    },
+    {
+      "role": "assistant",
+      "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+    },
+    {
+      "role": "user
+2025-07-29 03:59:53.755 | ERROR    | agents.input_agent:input_agent:110 - ⚠️ Failed to parse Gemini response
+2025-07-29 04:00:00.818 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+    "dialog": [
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user
+2025-07-29 04:00:00.818 | ERROR    | agents.input_agent:input_agent:110 - ⚠️ Failed to parse Gemini response
+2025-07-29 04:00:07.515 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+    "dialog": [
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user
+2025-07-29 04:00:07.516 | ERROR    | agents.input_agent:input_agent:110 - ⚠️ Failed to parse Gemini response
+2025-07-29 04:00:14.429 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+    "dialog": [
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": ""
+        },
+        {
+            "role": "assistant",
+            "content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user",
+            "content": "I am not able to access my vm"
+        },
+        {
+            "role": "assistant",
+            "content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+        },
+        {
+            "role": "user
+2025-07-29 04:00:14.429 | ERROR    | agents.input_agent:input_agent:110 - ⚠️ Failed to parse Gemini response
+2025-07-29 04:00:21.766 | INFO     | agents.input_agent:input_agent:84 - 🔎 Gemini raw output: ```json
+{
+"dialog": [
+{
+"role": "user",
+"content": "I am not able to access my vm"
+},
+{
+"role": "assistant",
+"content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": "I am not able to access my vm"
+},
+{
+"role": "assistant",
+"content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": ""
+},
+{
+"role": "assistant",
+"content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": "I am not able to access my vm"
+},
+{
+"role": "assistant",
+"content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": "I am not able to access my vm"
+},
+{
+"role": "assistant",
+"content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": ""
+},
+{
+"role": "assistant",
+"content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": ""
+},
+{
+"role": "assistant",
+"content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": "I am not able to access my vm"
+},
+{
+"role": "assistant",
+"content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": "I am not able to access my vm"
+},
+{
+"role": "assistant",
+"content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": ""
+},
+{
+"role": "assistant",
+"content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": "I am not able to access my vm"
+},
+{
+"role": "assistant",
+"content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": "I am not able to access my vm"
+},
+{
+"role": "assistant",
+"content": "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": ""
+},
+{
+"role": "assistant",
+"content": "To help me understand the issue better, could you please specify which cloud provider you're using (e.g., AWS, Azure, GCP, OCI) and how you are trying to access the VM (e.g., SSH, RDP, browser)?"
+},
+{
+"role": "user",
+"content": ""
+},
+{
+"
+2025-07-29 04:00:21.766 | ERROR    | agents.input_agent:input_agent:110 - ⚠️ Failed to parse Gemini response
