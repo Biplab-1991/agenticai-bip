@@ -50,3 +50,6 @@ def trigger_input_intent(body: InputIntentBody): # <-- Change this line
             "status": "error",
             "message": str(e)
         }
+
+
+{"user_query":"I am not able to access my vm"}
