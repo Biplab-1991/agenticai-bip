@@ -1,41 +1,12 @@
-from fastapi import FastAPI
-import asyncio
-from main import run_input_intent_agent_server
-from pydantic import BaseModel
-from typing import Optional
-import logging
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Pydantic input model
-class InputIntentBody(BaseModel):
-    user_query: str
-    thread_id: Optional[str] = None
-
-app = FastAPI(title="Input Intent API")
-
-@app.post("/input-intent")
-def trigger_input_intent(body: InputIntentBody):
-    logger.info(f"Received input: user_query='{body.user_query}', thread_id='{body.thread_id}'")
-    
-    try:
-        result = asyncio.run(run_input_intent_agent_server(body))
-        logger.info(f"Agent result: {result}")
-        
-        return {
-            "dialog": result.get("dialog", []),
-            "status": result.get("status", "unknown"),
-            "final_problem_statement": result.get("final_problem_statement", []),
-            "flow_type": result.get("flow_type", "non-guided"),
-            "documentation": result.get("documentation", []),
-            "next_question": result.get("next_question", ""),
-            "thread_id": result.get("thread_id", "")
-        }
-    except Exception as e:
-        logger.error(f"Failed to invoke input intent agent: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+API
+https://ansibleplus.ebiz.verizon.com/ccs/api/ragorchestrator
+Payload
+{
+  "useCase": "gts-h9vv-ccs-usecase",
+  "contextId": "gts-h9vv-ccs-context-withrag-uat",
+  "preSeed_injection_map": {
+    "{CONTEXT}": "",
+    "{QUESTION}": "How to migrate to 2.15 in Ansibleplus"
+  },
+  "session_id": ""
+}
