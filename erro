@@ -1,14 +1,87 @@
-from fastmcp import MultiServerMCPClient
+async def intent_agent(state: dict) -> dict:
+    print("-------------------------intent agent invoked------------------------------")
+    print("State::::::::::::::", state)
+    print("-------------------------------------------------------")
+    dialog = state.get("dialog", [])
+    final_problem_statement = state.get("final_problem_statement", "")
+    thread_id = state.get("tread_id", "")
 
-# Point this to your running AnsiblePlus MCP server
-client = MultiServerMCPClient(
-    servers=["http://localhost:8080/mcp/"]  # Change to deployed URL if not local
-)
+    flow_type = "non-guided"
+    documentation = []
+    score = 0
+    source = "gemini"  # default fallback
 
-async def ansibleplus_rag_stub(context: str, question: str, session_id: str):
-    result = await client.query_ansibleplus_rag(
-        context=context,
-        question=question,
-        session_id=session_id
-    )
-    return result
+    # 1. Try RAG
+    try:
+        rag_response = await ansibleplus_rag_stub(
+            context="",  # Or "\n".join(dialog) if desired
+            question=final_problem_statement,
+            session_id=thread_id
+        )
+        if rag_response and isinstance(rag_response, dict) and "error" not in rag_response:
+            rag_answer = rag_response.get("answer", "").strip()
+            if rag_answer:
+                # 2. Ask Gemini to rate how well the RAG answer solves the problem
+                eval_prompt = f"""
+                You are an evaluator. A troubleshooting assistant has generated a response to the user's cloud issue.
+
+                ---
+                **Final Problem Statement:**
+                {final_problem_statement}
+
+                **RAG Answer:**
+                {rag_answer}
+
+                ---
+                On a scale of 0 to 100, how well does the RAG answer directly solve or address the final problem statement?
+
+                Only respond with a number between 0 and 100.
+                """
+                try:
+                    score_response = llm.invoke([HumanMessage(content=eval_prompt)])
+                    score_str = score_response.content.strip()
+                    score = int(''.join(filter(str.isdigit, score_str)))
+                except Exception as eval_err:
+                    logger.warning("RAG evaluation by LLM failed: %s", eval_err)
+                    score = 0
+
+                if score >= 70:
+                    documentation = rag_answer.split("\n")
+                    source = "rag"
+
+    except Exception as e:
+        logger.error("RAG call failed:", e)
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+    # 3. Fallback to Gemini-generated steps if RAG is weak or failed
+    if not documentation:
+        prompt = f"""
+        You are a highly knowledgeable cloud expert. Your sole purpose is to provide a comprehensive list of troubleshooting steps for the problem you receive.
+
+        ---
+
+        Problem: {final_problem_statement}
+
+        Respond only with a numbered list of steps.
+        """
+        try:
+            response = llm.invoke([HumanMessage(content=prompt)])
+            documentation = [step.strip() for step in response.content.strip().split("\n") if step.strip()]
+        except Exception as e:
+            logger.error("Gemini fallback failed: %s", e)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    return {
+        "dialog": dialog,
+        "final_problem_statement": final_problem_statement,
+        "flow_type": flow_type,
+        "documentation": documentation,
+        "score": score,
+        "source": source
+    }
