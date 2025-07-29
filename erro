@@ -1,112 +1,54 @@
-import json
-from langgraph.graph import StateGraph, END
-from langchain_core.runnables import Runnable
-from langchain_core.messages import HumanMessage
-from typing import List, Literal, TypedDict
-from utils.config import llm, logger
-
-# State Schema
-class InputAgentState(TypedDict):
-    dialog: List[str]
-    last_input: str
-    status: Literal["complete", "incomplete"]
-    final_problem_statement: str
-
-# Input Agent Definition
 def input_agent(state: dict) -> dict:
-        #print("📥 State received by InputAgent:", state)  # 🔍 Debug
+    dialog = state.get("dialog", [])
+    last_input = state.get("last_input", "")
 
-        dialog = state.get("dialog", [])
-        last_input = state.get("last_input", "")
-        #dialog.append(last_input)
-        #print("🗣️ last_input in InputAgent:", last_input)
+    prompt = f""" 
+    [your same prompt here... truncated for brevity]
+    Dialog so far:
+    {dialog}
 
-        prompt = f""" 
-        **Initiate Interaction:** If this is the very first interaction (i.e., 'Dialog so far' is empty), begin with a warm and open-ended greeting, inviting the user to share their problem. For example: "Hi there! how can I help you today.."
+    New input from user:
+    {last_input}
+    """
+    
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+        raw_output = response.content.strip()
 
-        You are a helpful and intelligent assistant. Your primary role is to act as the initial point of contact, diligently collecting all essential details about a user's technical issue. Your goal is to construct a clear, comprehensive, and complete problem statement by asking intelligent, context-aware follow-up questions.
+        # Log raw output for debugging
+        logger.info(f"🔎 Gemini raw output: {raw_output}")
 
-        **You must adhere to the following:**
+        # Try to extract JSON content
+        if "```json" in raw_output:
+            cleaned = raw_output.split("```json")[-1].split("```")[0].strip()
+        elif raw_output.startswith("{") and raw_output.endswith("}"):
+            cleaned = raw_output
+        else:
+            raise ValueError("No valid JSON block found in Gemini response")
 
-        1.  **Information Collection Mandate & Intelligent Inference:** You are responsible for gathering the following key details for the `final_problem_statement`. **Before asking, attempt to infer information (like Cloud Provider or Affected Service) from the user's input based on your knowledge (e.g., S3/Lambda imply AWS; AKS implies Azure; Cloud Run implies GCP). Avoid asking for details you can reasonably infer or that have already been provided.**:
-            * **Cloud Provider:** (e.g., AWS, Azure, GCP, OCI)
-            * **Affected Service:** (e.g., EC2, AKS, Cloud Run, S3, OCI Compute)
-            * **Specific Problem / Error Message / Symptom:** (e.g., "Connection timed out," "ImagePullBackOff," "ResourceNotFound," "VM not accessible")
-            * **Relevant Resource ID(s):** (e.g., instance ID, bucket name, cluster name, service name)
-            * **Region / Availability Zone:** Where the resource is located.
-            * **Action Attempted:** What the user was trying to do when the issue occurred (e.g., deploy, create, connect via SSH).
-            * **Contextual Details:** Has it ever worked before? What changed recently?
-            * ** Project name: as well if its the problem is related to GCP.
-            * **Preferred Output Method:** How the user would like troubleshooting steps to be provided (e.g., CLI, Console, API, or All). You **MUST** ask for this if not provided.
+        parsed = json.loads(cleaned)
 
-        2.  **Dialogue Management:**
-            * Record the full conversation dialogue in a list.
-            * Based on the `Dialog so far` and `New input from user`, intelligently extract and progressively refine the `final_problem_statement` string.
-            * Determine the `status` as "complete" if *all* the mandatory and highly recommended information (listed in point 1) has been collected and summarized in the `final_problem_statement`. Otherwise, set `status` to "incomplete".
+        # Append messages
+        dialog.append({"role": "user", "content": last_input})
+        if parsed.get("status") == "incomplete":
+            dialog.append({"role": "assistant", "content": parsed.get("next_question", "")})
 
-        3.  **Intelligent Questioning (if `status` is "incomplete"):**
-            * Formulate a precise `next_question` to gather any remaining important missing information.
-            * Maintain a **kind, polite, and empathetic tone** in all your questions and responses.
-            * **DO NOT assume** the cloud provider or access method unless explicitly stated by the user.
-            * **Example Follow-ups:**
-                * If the user says "can't access VM": Ask: "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
-                * If missing region: Ask: "Which region is this resource located in?"
-                * If missing preferred output: Ask: "How would you prefer the troubleshooting steps to be provided: via CLI commands, console navigation, API calls, or all relevant methods?"
-
-        4.  **Strict Output Format:**
-            * Return **only** a valid JSON object. Do not wrap it in Markdown or any conversational explanation. The JSON should follow this exact structure:
-
-            ```json
-            {{
-            "dialog": [... list of user messages ...],
-            "final_problem_statement": "... summary of issue including all collected details...",
-            "status": "complete" | "incomplete",
-            "next_question": "If status is incomplete, ask this question next"
-            }}
-            ```
-            * **Crucially, the `final_problem_statement` string MUST be formatted as a concise concatenation of all collected key-value pairs, even if some values are 'N/A' or 'null'. Example:**
-        `'The user is encountering an issue retrieving the status of EC2 instance i-guvww7671 in the AWS us-east-1 region. The instance status retrieval was previously working, and no recent changes have been made. The user prefers troubleshooting steps via API calls. Cloud Provider: AWS, Affected Service: EC2, Resource ID: i-guvww7671, Region: us-east-1, Action Attempted: Getting the status of the instance, Contextual Details: Was working fine before, preferred_output_methods : troubleshooting steps via API calls,  no recent changes, Preferred Output Method: API.'`
-        **Ensure consistent phrasing for the key-value pairs (e.g., "Cloud Provider: [Value]").**
-
-        **Context for this interaction:**
-
-        Dialog so far:
-        {dialog}
-
-        New input from user:
-        {last_input}
-        """
-        try:
-            response = llm.invoke([HumanMessage(content=prompt)])
-            #print("🔎 Gemini raw output:", response.content)
-
-            json_content = response.content.strip()
-            cleaned = json_content.strip().strip("```json").strip("```")
-            parsed = json.loads(cleaned)
-
-            # ✅ Append the user's input locally
-
-            # if parsed.get("status") == "incomplete":
-            followup = parsed.get("next_question", "")
-            #     last_input = input(f"🤖 {followup}\n👉 ")
-            dialog.append({"role": "assistant", "content": followup})
-                # dialog.append({"role": "user", "content": last_input})
-            dialog.append({"role": "user", "content": last_input})
-
-            #raise ValueError(f"❌ Unexpected Gemini response format:\n{json_content}")
-
-        except Exception as e:
-            print("⚠️ Gemini failed to parse JSON:", e)
-            logger.info("⚠️ Gemini failed to parse JSON:", e)
-            dialog.append(last_input)  # Still append even if error
-            return {
-                "status": "error",
-                "message": f"Failed to process user input : {str(e)}"
-            }
         return {
             "dialog": dialog,
             "final_problem_statement": parsed.get("final_problem_statement", ""),
             "status": parsed.get("status", "incomplete"),
             "next_question": parsed.get("next_question", ""),
+            "last_input": ""
+        }
+
+    except Exception as e:
+        logger.error("⚠️ Failed to parse Gemini response", exc_info=True)
+        dialog.append({"role": "user", "content": last_input})
+        return {
+            "dialog": dialog,
+            "status": "error",
+            "message": f"Gemini returned invalid output. Error: {str(e)}",
+            "final_problem_statement": "",
+            "next_question": "",
             "last_input": ""
         }
