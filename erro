@@ -1,6 +1,87 @@
-state = await checkpointer.get("your_thread_id")
+async def run_input_intent_agent_server(input):
+    
+    async with AsyncVegasSaver.execute() as checkpointer:
 
-if state:
-    print("Previous state found:", state)
-else:
-    print("No state found for this thread_id.")
+        """
+        Runs the interactive console chat loop with the provided LangGraph app.
+        """
+        try:
+            current_session_state = {
+                "last_input": "",
+                "thread_id": "",
+                "dialog": [],
+                "messages": []
+            }
+
+            # Define the graph
+            graph = StateGraph(InputAgentState)
+
+            # Add nodes
+            graph.add_node("input", input_agent)
+            graph.add_node("intent", intent_agent)
+
+            # Set entry point
+            graph.set_entry_point("input")
+
+            # Add conditional logic
+            graph.add_conditional_edges(
+                "input",
+                lambda s: "intent" if s.get("status") == "complete" else END,
+                {
+                    "intent": "intent",
+                    END: END
+                }
+            )
+            graph.add_edge("intent", END)
+
+            # Compile app
+            app = graph.compile(checkpointer=checkpointer)
+            logger.info("LangGraph app compiled successfully.")
+
+            user_input = input.user_query
+            thread_id = input.thread_id.strip() if input.thread_id and input.thread_id.strip() else str(uuid.uuid4())
+
+            if input.thread_id:
+                logger.info(f"--- Resuming session (thread_id: {thread_id})")
+            else:
+                logger.info(f"--- Starting new session (thread_id: {thread_id})")
+
+            state = await checkpointer.get(thread_id)
+
+            if state:
+                print("Previous state found:", state)
+            else:
+                print("No state found for this thread_id.")
+
+            current_session_state["last_input"] = user_input
+            current_session_state["thread_id"] = thread_id
+            current_session_state["messages"].append({"role": "user", "content": user_input})
+
+            try:
+                result = await app.ainvoke(current_session_state, config={"configurable": {"thread_id": thread_id}})
+                logger.info(f"Execution result: {result}")
+                return result
+            except Exception as run_error:
+                logger.error(f"LangGraph invocation failed: {run_error}", exc_info=True)
+                return {
+                    "status": "error",
+                    "message": str(run_error),
+                    "thread_id": thread_id,
+                    "dialog": current_session_state.get("dialog", []),
+                    "final_problem_statement": [],
+                    "next_question": "Something went wrong. Please try again."
+                }
+
+        except Exception as e:
+            logger.error(f"run_input_intent_agent_server crashed: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e),
+                "thread_id": "",
+                "dialog": [],
+                "final_problem_statement": [],
+                "next_question": "An unexpected error occurred. Please restart the conversation."
+            }
+
+ERROR    | main:run_input_intent_agent_server:145 - run_input_intent_agent_server crashed: Synchronous calls to AsyncSqliteSaver are only allowed from a different thread. From the main thread, use the async interface. For example, use `await checkpointer.aget_tuple(...)` or `await graph.ainvoke(...)`.
+INFO:server:Agent result: {'status': 'error', 'message': 'Synchronous calls to AsyncSqliteSaver are only allowed from a different thread. From the main thread, use the async interface. For example, use `await checkpointer.aget_tuple(...)` or `await graph.ainvoke(...)`.', 'thread_id': '', 'dialog': [], 'final_problem_statement': [], 'next_question': 'An unexpected error occurred. Please restart the conversation.'}
