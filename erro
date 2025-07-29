@@ -1,27 +1,34 @@
 async def run_input_intent_agent_server(input):
-    
-    async with AsyncVegasSaver.execute() as checkpointer:
+    import uuid
+    import logging
+    from langgraph.graph import StateGraph, END
+    from agents.input_agent import input_agent
+    from agents.intent_agent import intent_agent
+    from utils.checkpointer import AsyncVegasSaver
 
-        """
-        Runs the interactive console chat loop with the provided LangGraph app.
-        """
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    async with AsyncVegasSaver.execute() as checkpointer:
         try:
             current_session_state = {
                 "last_input": "",
                 "thread_id": "",
-                "dialog": []
+                "dialog": [],
+                "messages": []
             }
 
             # Define the graph
             graph = StateGraph(InputAgentState)
 
-            # Define nodes
+            # Add nodes
             graph.add_node("input", input_agent)
             graph.add_node("intent", intent_agent)
 
-            # Entry point
+            # Set entry point
             graph.set_entry_point("input")
 
+            # Add conditional logic
             graph.add_conditional_edges(
                 "input",
                 lambda s: "intent" if s.get("status") == "complete" else END,
@@ -30,50 +37,46 @@ async def run_input_intent_agent_server(input):
                     END: END
                 }
             )
-
-            # Define the edge from 'intent' to END
             graph.add_edge("intent", END)
 
-            # Compile the app with a checkpointer for state persistence
+            # Compile app
             app = graph.compile(checkpointer=checkpointer)
-            logger.info("LangGraph conversation app compiled successfully.")
-            # Removed: Check for GOOGLE_API_KEY environment variable here.
-            # The LLM initialization in utils/config.py will handle its absence.
+            logger.info("LangGraph app compiled successfully.")
 
-            # Generate a unique thread ID for this conversation session
             user_input = input.user_query
-            thread_id = ""
-            if input.thread_id and input.thread_id.strip():
-                thread_id = input.thread_id
-                print(f"--- Starting with existing conversation session (ID: {thread_id})")
-            else:
-                thread_id = str(uuid.uuid4())
-                print(f"--- Starting new conversation session (ID: {thread_id})")
+            thread_id = input.thread_id.strip() if input.thread_id and input.thread_id.strip() else str(uuid.uuid4())
 
-            # Update the state with the new user input for the current turn.
+            if input.thread_id:
+                logger.info(f"--- Resuming session (thread_id: {thread_id})")
+            else:
+                logger.info(f"--- Starting new session (thread_id: {thread_id})")
+
             current_session_state["last_input"] = user_input
             current_session_state["thread_id"] = thread_id
-            #current_session_state["dialog"].append(user_input)
-            
-            # Ensure 'messages' list exists and append user message for LLM context
-            if "messages" not in current_session_state or current_session_state["messages"] is None:
-                current_session_state["messages"] = []
             current_session_state["messages"].append({"role": "user", "content": user_input})
 
-            # Invoke the LangGraph app with the updated current state and thread_id
-            # This will run one or more nodes until a conditional edge leads to END or a loop.
-            result = await app.ainvoke(current_session_state, config={"configurable": {"thread_id": thread_id}})
-
-            # Update our `current_session_state` with the final state from this invocation.
-            current_session_state = result
-
-            print("result::::",result)
-            return result
-
-                
+            try:
+                result = await app.ainvoke(current_session_state, config={"configurable": {"thread_id": thread_id}})
+                logger.info(f"Execution result: {result}")
+                return result
+            except Exception as run_error:
+                logger.error(f"LangGraph invocation failed: {run_error}", exc_info=True)
+                return {
+                    "status": "error",
+                    "message": str(run_error),
+                    "thread_id": thread_id,
+                    "dialog": current_session_state.get("dialog", []),
+                    "final_problem_statement": [],
+                    "next_question": "Something went wrong. Please try again."
+                }
 
         except Exception as e:
-            logger.error(f"something went wrong inside run_input_intent_agent: {e}", exc_info=True)
-            print(f"\nAgent: An unexpected error occurred: {e}. Please restart the conversation.")
-            # Decide how to handle the state on a critical error (e.g., reset, save for debugging)
-            # For now, just print and let the loop potentially continue or exit.
+            logger.error(f"run_input_intent_agent_server crashed: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e),
+                "thread_id": "",
+                "dialog": [],
+                "final_problem_statement": [],
+                "next_question": "An unexpected error occurred. Please restart the conversation."
+            }
