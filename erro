@@ -1,39 +1,4 @@
-from fastapi import FastAPI, Body
-from pydantic import BaseModel
-from main import input_intent_server
-import asyncio
-
-# Define the request model
-class InputIntentBody(BaseModel):
-    user_query: str
-    thread_id: str | None = None
-
-app = FastAPI(title="input_intent API")
-
-@app.post("/input-intent")
-def trigger_input_intent(
-    body: InputIntentBody = Body(
-        ..., 
-        example={
-            "user_query": "I am not able to access my vm",
-            "thread_id": "xyz-123"
-        }
-    )
-):
-    print(f"Received body: {body}")
-    try:
-        result = asyncio.run(input_intent_server(body))
-        return {
-            "dialog": result.get("dialog", []),
-            "status": result.get("status", "unknown"),
-            "final_problem_statement": result.get("final_problem_statement", []),
-            "flow_type": result.get("flow_type", "non-guided"),
-            "documentation": result.get("documentation", []),
-            "next_question": result.get("next_question", ""),
-            "thread_id": result.get("thread_id", "")
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+  Started server process [18786]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:56184 - "POST /input-intent?body=%7B%22user_query%22%3A%22I%20am%20not%20able%20to%20access%20my%20vm%22%7D HTTP/1.1" 422 Unprocessable Entity
