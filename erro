@@ -1,14 +1,22 @@
-from langchain_mcp_adapters.client import MultiServerMCPClient
+from fastmcp import MultiServerMCPClient
 
-# Point this to your running AnsiblePlus MCP server
-client = MultiServerMCPClient(
-    servers=["http://localhost:8080/mcp/"]  # Change to deployed URL if not local
-)
+client = MultiServerMCPClient({
+    "ansibleplus": {
+        "url": "http://localhost:8080/mcp/",
+        "transport": "streamable_http"
+    }
+})
 
 async def ansibleplus_rag_stub(context: str, question: str, session_id: str):
-    result = await client.query_ansibleplus_rag(
-        context=context,
-        question=question,
-        session_id=session_id
-    )
-    return result
+    try:
+        response = await client.query(
+            tool="ansibleplus.rag",
+            input={
+                "context": context,
+                "question": question,
+                "session_id": session_id
+            }
+        )
+        return response
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
