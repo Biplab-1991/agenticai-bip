@@ -1,15 +1,12 @@
-from fastmcp import MultiServerMCPClient
-
-# Point this to your running AnsiblePlus MCP server
-client = MultiServerMCPClient(
-    servers=["http://localhost:8080"]  # Change to deployed URL if not local
-)
-
-# Stub to call AnsiblePlus RAG Tool
-async def ansibleplus_rag_stub(context: str, question: str, session_id: str):
-    result = await client.query_ansibleplus_rag(
-        context=context,
-        question=question,
-        session_id=session_id
-    )
-    return result
+# 1. Call MCP-based RAG tool first
+    try:
+        rag_response = await ansibleplus_rag_stub(
+            context="\n".join(dialog),
+            question=final_problem_statement,
+            session_id=session_id
+        )
+        if rag_response and isinstance(rag_response, dict):
+            if "error" not in rag_response:
+                documentation = rag_response.get("answer", "").split("\n")
+    except Exception as e:
+        logger.error("RAG call failed:", e)
