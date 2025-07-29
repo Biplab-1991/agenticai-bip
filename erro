@@ -1,22 +1,6 @@
-from fastmcp import MultiServerMCPClient
+state = await checkpointer.get("your_thread_id")
 
-client = MultiServerMCPClient({
-    "ansibleplus": {
-        "url": "http://localhost:8080/mcp/",
-        "transport": "streamable_http"
-    }
-})
-
-async def ansibleplus_rag_stub(context: str, question: str, session_id: str):
-    try:
-        response = await client.query(
-            tool="ansibleplus.rag",
-            input={
-                "context": context,
-                "question": question,
-                "session_id": session_id
-            }
-        )
-        return response
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+if state:
+    print("Previous state found:", state)
+else:
+    print("No state found for this thread_id.")
