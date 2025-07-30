@@ -1,7 +1,30 @@
-curl --location 'https://oa-uat.ebiz.verizon.com/vegas/models/llm-embeddings' \
---header 'Content-Type: application/json' \
---header 'X-apikey: 03WYIBAOAw3NPdLb24CTYGd6n4HTX0ZR' \
---data '{
-    "model_name": "text-embedding-004",
-    "text": "The user is unable to access their EC2 instance i-xxxxxx in the us-east-1 region. The instance was previously accessible, and the user prefers troubleshooting steps via API calls. Cloud Provider: AWS, Affected Service: EC2, Resource ID: i-xxxxxx, Region: us-east-1, Action Attempted: Accessing the instance, Contextual Details: Was working fine before, Preferred Output Method: API."
-}'
+import requests
+
+def get_embedding(text: str) -> dict:
+    url = "https://oa-uat.ebiz.verizon.com/vegas/models/llm-embeddings"
+    headers = {
+        "Content-Type": "application/json",
+        "X-apikey": "03WYIBAOAw3NPdLb24CTYGd6n4HTX0ZR"
+    }
+    payload = {
+        "model_name": "text-embedding-004",
+        "text": text
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        print("Error:", e)
+        return {"error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    text = ("The user is unable to access their EC2 instance i-xxxxxx in the us-east-1 region. "
+            "The instance was previously accessible, and the user prefers troubleshooting steps via API calls. "
+            "Cloud Provider: AWS, Affected Service: EC2, Resource ID: i-xxxxxx, Region: us-east-1, "
+            "Action Attempted: Accessing the instance, Contextual Details: Was working fine before, "
+            "Preferred Output Method: API.")
+    result = get_embedding(text)
+    print(result)
