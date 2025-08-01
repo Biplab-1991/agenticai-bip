@@ -1,12 +1,83 @@
-Convert the following raw technical content into a Confluence wiki-markup format document. It should have:
+from fastapi import FastAPI, Request
+from langgraph.graph import create_supervisor
+from langchain_core.runnables import RunnableLambda
+import uvicorn
 
-1. Numbered steps and sections
-2. Bold titles using double asterisks (**) or Confluence headings (h2., h3.)
-3. Bullet points with dashes (-)
-4. Code blocks wrapped in `{code}` tags
-5. Any included links should be formatted as [text|URL]
+app = FastAPI()
 
-Here is the content:
----
-<PASTE_YOUR_CONTENT_HERE>
----
+# ---------------------------
+# Sub-Agent Definitions
+# ---------------------------
+
+def cloud_ops_agent_func(data):
+    return {"agent": "cloud_ops", "result": f"Handled by CloudOps: {data['input']}"}
+
+def sysadmin_agent_func(data):
+    return {"agent": "sysadmin", "result": f"Handled by SysAdmin: {data['input']}"}
+
+def fallback_agent_func(data):
+    return {"agent": "fallback", "result": f"No match, fallback handled: {data['input']}"}
+
+cloud_ops_agent = RunnableLambda(cloud_ops_agent_func)
+sysadmin_agent = RunnableLambda(sysadmin_agent_func)
+fallback_agent = RunnableLambda(fallback_agent_func)
+
+# ---------------------------
+# Routing Decision Function
+# ---------------------------
+
+def decide_agent(input_data):
+    user_input = input_data["input"].lower()
+    if "vm" in user_input or "cloud" in user_input:
+        return {"cloud_ops": input_data}
+    elif "disk" in user_input or "memory" in user_input or "os" in user_input:
+        return {"sysadmin": input_data}
+    else:
+        return {"fallback": input_data}
+
+decision_agent = RunnableLambda(decide_agent)
+
+# ---------------------------
+# Supervisor Definition
+# ---------------------------
+
+supervisor = create_supervisor(
+    {
+        "cloud_ops": cloud_ops_agent,
+        "sysadmin": sysadmin_agent,
+        "fallback": fallback_agent,
+    },
+    entry_point=decision_agent
+)
+
+# ---------------------------
+# FastAPI Routes
+# ---------------------------
+
+@app.post("/supervisor")
+async def handle_supervisor(request: Request):
+    body = await request.json()
+    result = await supervisor.ainvoke(body)
+    return result
+
+@app.post("/cloud_ops")
+async def handle_cloud_ops(request: Request):
+    body = await request.json()
+    return cloud_ops_agent.invoke(body)
+
+@app.post("/sysadmin")
+async def handle_sysadmin(request: Request):
+    body = await request.json()
+    return sysadmin_agent.invoke(body)
+
+@app.post("/fallback")
+async def handle_fallback(request: Request):
+    body = await request.json()
+    return fallback_agent.invoke(body)
+
+# ---------------------------
+# Local Dev Entrypoint
+# ---------------------------
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8080)
