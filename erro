@@ -1,1 +1,32 @@
-llm_response_content = (await llm.ainvoke(doc_prompt)).content
+def json_to_confluence_xhtml(json_string_or_dict: str | dict) -> str:
+    # Parse if it's a string
+    if isinstance(json_string_or_dict, str):
+        data = json.loads(json_string_or_dict)
+    else:
+        data = json_string_or_dict
+
+    output = []
+
+    for section in data.get("sections", []):
+        title = html.escape(section.get("title", ""))
+        output.append(f"<h2>{title}</h2>")
+        output.append("<ul>")
+
+        for step in section.get("steps", []):
+            text = html.escape(step.get("text", "")).strip()
+            code = step.get("code")
+
+            if code:
+                code_block = (
+                    '<ac:structured-macro ac:name="code">'
+                    '<ac:parameter ac:name="language">bash</ac:parameter>'
+                    '<ac:plain-text-body><![CDATA[' + code.strip() + ']]></ac:plain-text-body>'
+                    '</ac:structured-macro>'
+                )
+                output.append(f"<li>{text}<br/>{code_block}</li>")
+            else:
+                output.append(f"<li>{text}</li>")
+
+        output.append("</ul>")
+
+    return "\n".join(output)
