@@ -1,79 +1,29 @@
-```json
-{
-"dialog": [
-{
-"role": "user",
-"content": "i-xxsdsdsdsd,us-east-1,console, api calls"
-},
-{
-"role": "assistant",
-"content": "Hi there! To assist you better, could you please specify which cloud provider you are using (e.g., AWS, Azure, GCP) and what service is affected (e.g., EC2, AKS, Cloud Run)? Also, what action were you attempting when the issue occurred, and what specific problem or error message are you encountering?"
-},
-{
-"role": "user",
-"content": "i-xxsdsdsdsd,us-east-1,console, api calls"
-},
-{
-"role": "assistant",
-"content": "Hi there! To assist you better, could you please specify which cloud provider you are using (e.g., AWS, Azure, GCP) and what service is affected (e.g., EC2, AKS, Cloud Run)? Also, what action were you attempting when the issue occurred, and what specific problem or error message are you encountering?"
-},
-{
-"role": "user",
-"content": "aws"
-},
-{
-"role": "assistant",
-"content": "Thanks! Now that we know you're using AWS, could you please tell me which AWS service is affected (e.g., EC2, S3, Lambda)? Also, what specific problem or error message are you encountering, and what action were you attempting when the issue occurred? I see you've provided 'i-xxsdsdsdsd,us-east-1,console, api calls' - could you clarify what these refer to?"
-},
-{
-"role": "user",
-"content": "i-xxsdsdsdsd,us-east-1,console, api calls"
-},
-{
-"role": "assistant",
-"content": "Hi there! To assist you better, could you please specify which cloud provider you are using (e.g., AWS, Azure, GCP) and what service is affected (e.g., EC2, AKS, Cloud Run)? Also, what action were you attempting when the issue occurred, and what specific problem or error message are you encountering?"
-},
-{
-"role": "user",
-"content": "i-xxsdsdsdsd,us-east-1,console, api calls"
-},
-{
-"role": "assistant",
-"content": "Hi there! To assist you better, could you please specify which cloud provider you are using (e.g., AWS, Azure, GCP) and what service is affected (e.g., EC2, AKS, Cloud Run)? Also, what action were you attempting when the issue occurred, and what specific problem or error message are you encountering?"
-},
-{
-"role": "user",
-"content": "aws"
-},
-{
-"role": "assistant",
-"content": "Thanks! Now that we know you're using AWS, could you please tell me which AWS service is affected (e.g., EC2, S3, Lambda)? Also, what specific problem or error message are you encountering, and what action were you attempting when the issue occurred? I see you've provided 'i-xxsdsdsdsd,us-east-1,console, api calls' - could you clarify what these refer to?"
-},
-{
-"role": "user",
-"content": "ec2"
-},
-{
-"role": "user",
-"content": "i-xxsdsdsdsd,us-east-1,console, api calls"
-},
-{
-"role": "assistant",
-"content": "Hi there! To assist you better, could you please specify which cloud provider you are using (e.g., AWS, Azure, GCP) and what service is affected (e.g., EC2, AKS, Cloud Run)? Also, what action were you attempting when the issue occurred, and what specific problem or error message are you encountering?"
-},
-{
-"role": "user",
-"content": "i-xxsdsdsdsd,us-east-1,console, api calls"
-},
-{
-"role": "assistant",
-"content": "Hi there! To assist you better, could you please specify which cloud provider you are using (e.g., AWS, Azure, GCP) and what service is affected (e.g., EC2, AKS, Cloud Run)? Also, what action were you attempting when the issue occurred, and what specific problem or error message are you encountering?"
-},
-{
-"role": "user
+import json
+from langgraph.graph import StateGraph, END
+from langchain_core.runnables import Runnable
+from langchain_core.messages import HumanMessage
+from typing import List, Literal, TypedDict
+from utils.config import llm, logger
 
+# State Schema
+class InputAgentState(TypedDict):
+    dialog: List[str]
+    last_input: str
+    status: Literal["complete", "incomplete"]
+    final_problem_statement: str
 
-prompt = f""" 
+# Input Agent Definition
+def input_agent(state: dict) -> dict:
+        #print("📥 State received by InputAgent:", state)  # 🔍 Debug
+
+        dialog = state.get("dialog", [])
+        last_input = state.get("last_input", "")
+        if len(dialog) > 10:
+            dialog = dialog[-10:]
+        #dialog.append(last_input)
+        #print("🗣️ last_input in InputAgent:", last_input)
+
+        prompt = f""" 
         **Initiate Interaction:** If this is the very first interaction (i.e., 'Dialog so far' is empty), begin with a warm and open-ended greeting, inviting the user to share their problem. For example: "Hi there! how can I help you today.."
 
         You are a helpful and intelligent assistant. Your primary role is to act as the initial point of contact, diligently collecting all essential details about a user's technical issue. Your goal is to construct a clear, comprehensive, and complete problem statement by asking intelligent, context-aware follow-up questions.
