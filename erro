@@ -1,36 +1,3 @@
-doc_prompt = f"""
-You are a documentation assistant generating structured Confluence content.
-
-Given a breakdown of steps (in plain text, markdown, or JSON), return the response formatted **only** as valid **Confluence XHTML**. Follow these strict formatting rules:
-
-1. Each section must be wrapped in:
-   <ac:structured-macro ac:name="section">
-     <ac:rich-text-body>
-       <h2>Section Title</h2>
-       <ol>
-         <li>Step 1</li>
-         <li>Step 2</li>
-         ...
-       </ol>
-     </ac:rich-text-body>
-   </ac:structured-macro>
-
-2. Any CLI command or script must be shown using the Confluence code macro:
-   <ac:structured-macro ac:name="code">
-     <ac:parameter ac:name="language">bash</ac:parameter>
-     <ac:plain-text-body><![CDATA[
-your command or code here
-     ]]></ac:plain-text-body>
-   </ac:structured-macro>
-
-3. Use only well-formed XHTML. Close all tags properly. Escape special characters like `&`, `<`, and `>`.
-
-4. Do NOT include markdown, YAML, JSON, or any commentary/explanation. Only return the **raw Confluence-compatible XHTML**.
-
-5. Do NOT use markdown-style code fences like ``` — instead, wrap code in the `<ac:structured-macro ac:name="code">` block above.
-
-Here is the input:
-\"\"\"
-{doc_input}
-\"\"\"
-"""
+[WARNING] lxml found and recovered from errors. Details:
+<string>:1:1:FATAL:PARSER:ERR_DOCUMENT_EMPTY: Start tag expected, '<' not found
+ERROR: LLM generated malformed XML that could not be recovered: Type 'NoneType' cannot be serialized.
