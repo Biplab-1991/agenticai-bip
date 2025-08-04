@@ -1,51 +1,6 @@
-prompt = f"""
-You are a highly skilled cloud operations expert. Your task is to generate a precise, improved list of troubleshooting steps based on a user-reported cloud issue and a set of previously written documentation steps.
-
----
-
-### **Inputs:**
-
-1. **Problem Statement (`final_problem_statement`)**:
-   - This is a complete summary of a user's cloud-related technical issue.
-   - Example: "User unable to connect to a virtual machine due to timeout. Prefers CLI steps. Issue started yesterday."
-   - You must extract all relevant context: cloud provider (if mentioned), affected service, error message, region/zone, and — most importantly — the **preferred output method** (CLI, API, Console, or All).
-
-2. **Existing Documentation (`top_doc_context_1`)**:
-   - A block of plain text containing previously written troubleshooting steps or guidance.
-   - This may include useful or outdated steps, explanations, or links.
-   - Some content may be vague, duplicated, or poorly written.
-
----
-
-### **Your Task:**
-
-- Use the `final_problem_statement` as the primary guide.
-- Analyze `top_doc_context_1`:
-   - **Rephrase or improve** relevant steps.
-   - **Discard** outdated, vague, or incorrect content.
-   - **Include helpful links** if they contribute value to the troubleshooting process.
-   - Add any critical missing steps based on your expertise.
-
-- **Strictly follow the user's preferred output method**:
-   - If the preference is CLI, use only CLI commands.
-   - If API, use only API calls.
-   - If Console, use only web UI steps.
-   - If All, provide a balanced combination of CLI, API, and Console steps.
-
----
-
-### **Output Format:**
-
-- Return only a **numbered list** of improved troubleshooting steps.
-- You may include links where appropriate, but avoid unnecessary formatting.
-- Do **not** include any explanations, markdown, JSON, or additional commentary.
-
----
-
-Problem: {final_problem_statement}
-
-Existing Documentation Context:
-{top_doc_context_1}
-
-Now return only a numbered list of improved troubleshooting steps.
-"""
+"1.  Verify the EC2 instance status using the DescribeInstances API: `aws ec2 describe-instances --instance-ids i-eyerueuirire --region us-east-1` and check for any errors or pending states.",
+    "2.  Check the instance's security group configuration using the DescribeSecurityGroups API: `aws ec2 describe-security-groups --filters Name=group-id,Values=$(aws ec2 describe-instances --instance-ids i-eyerueuirire --region us-east-1 --query 'Reservations[0].Instances[0].SecurityGroups[*].GroupId' --output text) --region us-east-1`. Ensure inbound rules allow access from your IP address or the appropriate network.",
+    "3.  Examine the instance's network ACLs using the DescribeNetworkAcls API: `aws ec2 describe-network-acls --filters Name=association.network-interface-id,Values=$(aws ec2 describe-instances --instance-ids i-eyerueuirire --region us-east-1 --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' --output text) --region us-east-1`. Confirm that the ACLs allow inbound and outbound traffic on the necessary ports.",
+    "4.  Review the CloudTrail logs for any recent API calls related to the instance using the LookupEvents API: `aws cloudtrail lookup-events --lookup-attributes AttributeKey=ResourceId,AttributeValue=i-eyerueuirire --region us-east-1` to identify potential configuration changes or errors.",
+    "5.  Check the instance's system logs using the GetConsoleOutput API: `aws ec2 get-console-output --instance-id i-eyerueuirire --region us-east-1 --latest`. Look for any boot errors or application-level issues.",
+    "6.  Verify IAM permissions using the SimulatePrincipalPolicy API to ensure the user or role has the necessary permissions to access the EC2 instance: `aws iam simulate-principal-policy --policy-source-arn arn:aws:iam::<account_id>:user/<user_name> --resource-arn arn:aws:ec2:us-east-1:<account_id>:instance/i-eyerueuirire --action ec2:ConnectToInstance`. Replace `<account_id>` and `<user_name>` with appropriate values."
