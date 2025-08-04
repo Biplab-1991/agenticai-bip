@@ -1,121 +1,59 @@
-import json
-from langgraph.graph import StateGraph, END
-from langchain_core.runnables import Runnable
-from langchain_core.messages import HumanMessage
-from typing import List, Literal, TypedDict
-from utils.config import llm, logger
-
-# State Schema
-class InputAgentState(TypedDict):
-    dialog: List[str]
-    last_input: str
-    status: Literal["complete", "incomplete"]
-    final_problem_statement: str
-
-# Input Agent Definition
-def input_agent(state: dict) -> dict:
-        #print("📥 State received by InputAgent:", state)  # 🔍 Debug
-
-        dialog = state.get("dialog", [])
-        last_input = state.get("last_input", "")
-        if len(dialog) > 10:
-            dialog = dialog[-10:]
-        #dialog.append(last_input)
-        #print("🗣️ last_input in InputAgent:", last_input)
-
-        prompt = f""" 
-        **Initiate Interaction:** If this is the very first interaction (i.e., 'Dialog so far' is empty), begin with a warm and open-ended greeting, inviting the user to share their problem. For example: "Hi there! how can I help you today.."
-
-        You are a helpful and intelligent assistant. Your primary role is to act as the initial point of contact, diligently collecting all essential details about a user's technical issue. Your goal is to construct a clear, comprehensive, and complete problem statement by asking intelligent, context-aware follow-up questions.
-
-        **You must adhere to the following:**
-
-        1.  **Information Collection Mandate & Intelligent Inference:** You are responsible for gathering the following key details for the `final_problem_statement`. **Before asking, attempt to infer information (like Cloud Provider or Affected Service) from the user's input based on your knowledge (e.g., S3/Lambda imply AWS; AKS implies Azure; Cloud Run implies GCP). Avoid asking for details you can reasonably infer or that have already been provided.**:
-            * **Cloud Provider:** (e.g., AWS, Azure, GCP, OCI)
-            * **Affected Service:** (e.g., EC2, AKS, Cloud Run, S3, OCI Compute)
-            * **Specific Problem / Error Message / Symptom:** (e.g., "Connection timed out," "ImagePullBackOff," "ResourceNotFound," "VM not accessible")
-            * **Relevant Resource ID(s):** (e.g., instance ID, bucket name, cluster name, service name)
-            * **Region / Availability Zone:** Where the resource is located.
-            * **Action Attempted:** What the user was trying to do when the issue occurred (e.g., deploy, create, connect via SSH).
-            * **Contextual Details:** Has it ever worked before? What changed recently?
-            * ** Project name: as well if its the problem is related to GCP.
-            * **Preferred Output Method:** How the user would like troubleshooting steps to be provided (e.g., CLI, Console, API, or All). You **MUST** ask for this if not provided.
-
-        2.  **Dialogue Management:**
-            * Record the full conversation dialogue in a list.
-            * Based on the `Dialog so far` and `New input from user`, intelligently extract and progressively refine the `final_problem_statement` string.
-            * Determine the `status` as "complete" if *all* the mandatory and highly recommended information (listed in point 1) has been collected and summarized in the `final_problem_statement`. Otherwise, set `status` to "incomplete".
-
-        3.  **Intelligent Questioning (if `status` is "incomplete"):**
-            * Formulate a precise `next_question` to gather any remaining important missing information.
-            * Maintain a **kind, polite, and empathetic tone** in all your questions and responses.
-            * **DO NOT assume** the cloud provider or access method unless explicitly stated by the user.
-            * **Example Follow-ups:**
-                * If the user says "can't access VM": Ask: "What cloud provider are you using, and how are you trying to access your VM (e.g., SSH, RDP, browser)?"
-                * If missing region: Ask: "Which region is this resource located in?"
-                * If missing preferred output: Ask: "How would you prefer the troubleshooting steps to be provided: via CLI commands, console navigation, API calls, or all relevant methods?"
-
-        4.  **Strict Output Format:**
-            * Return **only** a valid JSON object. Do not wrap it in Markdown or any conversational explanation. The JSON should follow this exact structure:
-
-            ```json
-            {{
-            "dialog": [... list of user messages ...],
-            "final_problem_statement": "... summary of issue including all collected details...",
-            "status": "complete" | "incomplete",
-            "next_question": "If status is incomplete, ask this question next"
-            }}
-            ```
-            * **Crucially, the `final_problem_statement` string MUST be formatted as a concise concatenation of all collected key-value pairs, even if some values are 'N/A' or 'null'. Example:**
-        `'The user is encountering an issue retrieving the status of EC2 instance i-guvww7671 in the AWS us-east-1 region. The instance status retrieval was previously working, and no recent changes have been made. The user prefers troubleshooting steps via API calls. Cloud Provider: AWS, Affected Service: EC2, Resource ID: i-guvww7671, Region: us-east-1, Action Attempted: Getting the status of the instance, Contextual Details: Was working fine before, preferred_output_methods : troubleshooting steps via API calls,  no recent changes, Preferred Output Method: API.'`
-        **Ensure consistent phrasing for the key-value pairs (e.g., "Cloud Provider: [Value]").**
-
-        **Context for this interaction:**
-
-        Dialog so far:
-        {dialog}
-
-        New input from user:
-        {last_input}
-        """
-        try:
-            response = llm.invoke([HumanMessage(content=prompt)])
-            raw_output = response.content.strip()
-
-            # Log raw output for debugging
-            logger.info(f"🔎 Gemini raw output: {raw_output}")
-
-            # Try to extract JSON content
-            if "```json" in raw_output:
-                cleaned = raw_output.split("```json")[-1].split("```")[0].strip()
-            elif raw_output.startswith("{") and raw_output.endswith("}"):
-                cleaned = raw_output
-            else:
-                raise ValueError("No valid JSON block found in Gemini response")
-
-            parsed = json.loads(cleaned)
-
-            # Append messages
-            dialog.append({"role": "user", "content": last_input})
-            if parsed.get("status") == "incomplete":
-                dialog.append({"role": "assistant", "content": parsed.get("next_question", "")})
-
-            return {
-                "dialog": dialog,
-                "final_problem_statement": parsed.get("final_problem_statement", ""),
-                "status": parsed.get("status", "incomplete"),
-                "next_question": parsed.get("next_question", ""),
-                "last_input": ""
-            }
-
-        except Exception as e:
-            logger.error(f"⚠️ Failed to parse Gemini response", {str(e)})
-            dialog.append({"role": "user", "content": last_input})
-            return {
-                "dialog": dialog,
-                "status": "error",
-                "message": f"Gemini returned invalid output. Error: {str(e)}",
-                "final_problem_statement": "",
-                "next_question": "",
-                "last_input": ""
-            }
+```xml
+<h2>Check Instance Status:</h2>
+<ul>
+  <li>Use the following AWS CLI command to check if the instance is running. This will confirm if the instance was inadvertently stopped or terminated.
+    <ac:structured-macro ac:name="code">
+      <ac:parameter ac:name="language">bash</ac:parameter>
+      <ac:plain-text-body><![CDATA[
+aws ec2 describe-instances --instance-ids i-779wbdsu8 --region us-east-1
+]]></ac:plain-text-body>
+    </ac:structured-macro>
+  </li>
+  <li>Examine the output. Look for the <code>InstanceState</code> field. If the state is not "running", start the instance using the command below after confirming this is the intended action.</li>
+  <li>If the instance is stopped, start it using:
+    <ac:structured-macro ac:name="code">
+      <ac:parameter ac:name="language">bash</ac:parameter>
+      <ac:plain-text-body><![CDATA[
+aws ec2 start-instances --instance-ids i-779wbdsu8 --region us-east-1
+]]></ac:plain-text-body>
+    </ac:structured-macro>
+  </li>
+  <li>After starting, wait a few minutes and re-check the status to ensure it transitions to "running".</li>
+</ul>
+<h2>Verify Security Group Configuration:</h2>
+<ul>
+  <li>Use the following command to describe the security groups associated with the instance:
+    <ac:structured-macro ac:name="code">
+      <ac:parameter ac:name="language">bash</ac:parameter>
+      <ac:plain-text-body><![CDATA[
+aws ec2 describe-instances --instance-ids i-779wbdsu8 --region us-east-1 --query 'Reservations[*].Instances[*].SecurityGroups[*].GroupId' --output text
+]]></ac:plain-text-body>
+    </ac:structured-macro>
+  </li>
+  <li>For each security group ID obtained, describe the security group to check its inbound rules:
+    <ac:structured-macro ac:name="code">
+      <ac:parameter ac:name="language">bash</ac:parameter>
+      <ac:plain-text-body><![CDATA[
+aws ec2 describe-security-groups --group-ids <security_group_id> --region us-east-1
+]]></ac:plain-text-body>
+    </ac:structured-macro>
+  </li>
+  <li>Ensure that at least one security group allows inbound SSH access (port 22) from your CIDR range. If not, you will need to modify the security group.</li>
+  <li>To add an SSH rule to a security group (replace <code>&lt;security_group_id&gt;</code> and <code>&lt;your_cidr&gt;</code> with appropriate values):
+    <ac:structured-macro ac:name="code">
+      <ac:parameter ac:name="language">bash</ac:parameter>
+      <ac:plain-text-body><![CDATA[
+aws ec2 authorize-security-group-ingress --group-id <security_group_id> --protocol tcp --port 22 --cidr <your_cidr> --region us-east-1
+]]></ac:plain-text-body>
+    </ac:structured-macro>
+  </li>
+  <li>Consider adding the "infrastructure" or "MASTER-SSH" security groups if they are available and appropriate for your environment.</li>
+</ul>
+<h2>Check Network Connectivity (Subnet Issue):</h2>
+<ul>
+  <li>The documentation mentions that a "Network error: Connection refused" message after 15-30 seconds indicates a potential subnet or security group issue. The above security group check addresses the security group part.</li>
+  <li>To further investigate subnet issues via the CLI, you would typically need to examine the route tables and network ACLs associated with the subnet your instance is in. This is more complex and might require identifying the subnet ID first using <code>describe-instances</code> and then querying route tables and ACLs. Since you indicated no recent changes, and this was working before, focus on the instance status and security group checks first.</li>
+</ul>
+<h2>SSHD Status (Less Likely if Previously Working):</h2>
+<ul>
+  <li>If the SSH daemon (sshd) is not running, you'd typically get an immediate "Network error: Connection refused" message. Since the instance was working before, this is less likely, but you can attempt to connect to the instance and check the time it takes to receive the error. If immediate, this becomes more
