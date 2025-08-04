@@ -1,50 +1,23 @@
-import json
-import re
-
-# Install dependencies if needed:
-# pip install lxml
-
-from lxml import etree
-from lxml.html import builder as E
-
-def clean_llm_json_response(llm_resp: str) -> dict:
-    # Remove code block if present (e.g., ```json\n...\n```)
-    cleaned = re.sub(r"^```json\n|```$", "", llm_resp.strip(), flags=re.MULTILINE | re.DOTALL)
-    return json.loads(cleaned)
-
-def json_to_confluence_xhtml(data: dict) -> str:
-    div = E.DIV()
-    for section in data.get("sections", []):
-        div.append(E.H2(section["title"]))
-        for step in section.get("steps", []):
-            div.append(E.P(step["text"]))
-            if "code" in step:
-                code_block = E.P(E.CODE(step["code"]))
-                div.append(code_block)
-    return etree.tostring(div, pretty_print=True, method="html", encoding="unicode")
-
-# Async wrapper usage
-llm_resp = (await llm.ainvoke(doc_prompt)).content
-
-try:
-    parsed_json = clean_llm_json_response(llm_resp)
-    llm_response_content = json_to_confluence_xhtml(parsed_json)
-except Exception as e:
-    print("Error parsing LLM output:", e)
-    llm_response_content = "No summary found."
-
-# Continue your pipeline
-identified_cloud = (await llm.ainvoke(cloud_provider_prompt)).content.strip()
-summarized_text = "No summary found."
-
-if state.get("destination_page_title"):
-    identified_cloud = state.get("destination_page_title")
-
-result = {
-    "summarized_content": llm_response_content or summarized_text,
-    "identified_cloud_provider": identified_cloud,
-    "mcp_tools": mcp_tools_instance
-}
-
-print("result:::::::::::::::::::::::", result)
-return result
+doc_prompt = (
+        "Convert the following technical troubleshooting content into valid **Confluence Storage Format XHTML** (also known as the 'storage' representation used in the Confluence REST API).\n\n"
+        "Follow these strict formatting rules:\n"
+        "1. **Headings:** Use <h2> for main sections and <h3> for sub-sections.\n"
+        "2. **Bullet Lists:** Use nested <ul><li> elements for lists and sublists.\n"
+        "3. **Bold Text:** Use <strong> instead of <b>.\n"
+        "4. **Code Blocks:** Use the Confluence code macro:\n"
+        "   <ac:structured-macro ac:name=\"code\">\n"
+        "     <ac:parameter ac:name=\"language\">bash</ac:parameter>\n"
+        "     <ac:plain-text-body><![CDATA[\n"
+        "     your code here\n"
+        "     ]]></ac:plain-text-body>\n"
+        "   </ac:structured-macro>\n"
+        "5. **Inline code:** Use <code>inline_code</code> for inline snippets.\n"
+        "6. **Links:** Use <a href=\"URL\">text</a>.\n"
+        "7. **Well-Formed XHTML Only:** Close all tags properly, avoid unescaped characters (&, <, >), and ensure CDATA tags do not conflict with code content.\n"
+        "8. **Preserve All Original Content:** Do not remove or summarize any information.\n"
+        "9. **Output Only the Valid XHTML Block.** Do not include markdown, YAML, comments, or explanations.\n\n"
+        "Here is the content to be converted:\n"
+        "---\n"
+        f"{doc_input}\n"
+        "---"
+    )
