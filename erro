@@ -1,27 +1,15 @@
-Failed to update page 'Demo-page': 500 Server Error:  for url: https://oneconfluence.verizon.com/rest/api/content/1595149403
-
-
-
-I am passing below payload
-
 payload = {
-
-            "type": "page",
-
-            "title": cloud_page_title,
-
-            "space": {"key": destination_space_key},
-
-            "body": {
-
-                "wiki": {
-
-                    "value": new_content_block,
-
-                    "representation": "wiki"
-
-                }
-
-            }
-
-        }
+    "id": page_id,
+    "type": "page",
+    "title": cloud_page_title,
+    "space": {"key": destination_space_key},
+    "version": {
+        "number": current_version + 1
+    },
+    "body": {
+        "storage": {
+            "value": new_content_block,
+            "representation": "storage"
+        }
+    }
+}
