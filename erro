@@ -1,6 +1,47 @@
-"1.  Verify the EC2 instance status using the DescribeInstances API: `aws ec2 describe-instances --instance-ids i-eyerueuirire --region us-east-1` and check for any errors or pending states.",
-    "2.  Check the instance's security group configuration using the DescribeSecurityGroups API: `aws ec2 describe-security-groups --filters Name=group-id,Values=$(aws ec2 describe-instances --instance-ids i-eyerueuirire --region us-east-1 --query 'Reservations[0].Instances[0].SecurityGroups[*].GroupId' --output text) --region us-east-1`. Ensure inbound rules allow access from your IP address or the appropriate network.",
-    "3.  Examine the instance's network ACLs using the DescribeNetworkAcls API: `aws ec2 describe-network-acls --filters Name=association.network-interface-id,Values=$(aws ec2 describe-instances --instance-ids i-eyerueuirire --region us-east-1 --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' --output text) --region us-east-1`. Confirm that the ACLs allow inbound and outbound traffic on the necessary ports.",
-    "4.  Review the CloudTrail logs for any recent API calls related to the instance using the LookupEvents API: `aws cloudtrail lookup-events --lookup-attributes AttributeKey=ResourceId,AttributeValue=i-eyerueuirire --region us-east-1` to identify potential configuration changes or errors.",
-    "5.  Check the instance's system logs using the GetConsoleOutput API: `aws ec2 get-console-output --instance-id i-eyerueuirire --region us-east-1 --latest`. Look for any boot errors or application-level issues.",
-    "6.  Verify IAM permissions using the SimulatePrincipalPolicy API to ensure the user or role has the necessary permissions to access the EC2 instance: `aws iam simulate-principal-policy --policy-source-arn arn:aws:iam::<account_id>:user/<user_name> --resource-arn arn:aws:ec2:us-east-1:<account_id>:instance/i-eyerueuirire --action ec2:ConnectToInstance`. Replace `<account_id>` and `<user_name>` with appropriate values."
+prompt = f"""
+You are a cloud infrastructure expert tasked with creating high-quality, documentation-ready troubleshooting steps for internal knowledge bases like Confluence.
+
+---
+
+### **Inputs:**
+
+1. **Problem Statement (`final_problem_statement`)**:
+   - A full summary of a cloud-related issue reported by the user.
+   - You must extract cloud context, service type, resource IDs, region, and most importantly, the **preferred output method** (CLI, API, Console, or All).
+
+2. **Reference Content (`top_doc_context_1`)**:
+   - Previously written steps or notes. Some content may be outdated, vague, or too brief.
+   - Reuse and improve only what is relevant and accurate.
+
+---
+
+### **Your Task:**
+
+Generate a **clear, documentation-quality list of troubleshooting steps** based on the problem and relevant existing content.
+
+Each step must:
+- Be **descriptive and self-contained**
+- Include **not just the command or action**, but **what it does and why it matters**
+- Use links only if helpful
+- Be appropriate for the user’s preferred method: **CLI**, **API**, **Console**, or **All**
+
+---
+
+### **Output Rules:**
+
+- Output a **numbered list of full, readable troubleshooting steps**
+- **Each step should begin with a clear action**, followed by a brief explanation (1–2 sentences)
+- Include relevant CLI/API commands or navigation instructions only after explanation
+- Format steps for readability; assume they will be pasted into Confluence
+- Avoid code-dense one-liners with no context
+- You may include links if helpful
+
+---
+
+Problem: {final_problem_statement}
+
+Reference Content:
+{top_doc_context_1}
+
+Now return a numbered list of documentation-ready troubleshooting steps.
+"""
