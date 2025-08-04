@@ -1,6 +1,1 @@
-try:
-    llm_resp = (await llm.ainvoke(doc_prompt)).content
-    llm_response_content = json_to_confluence_xhtml(llm_resp)
-except Exception as e:
-    print("Error parsing LLM output:", e)
-    llm_response_content = None
+Error parsing LLM output: Expecting value: line 1 column 1 (char 0)
