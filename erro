@@ -1,60 +1,15 @@
-```html
-<h2>Check Instance Status</h2>
-<ul>
-<li>Use the following AWS CLI command to check if the instance is running. This will confirm if the instance was inadvertently stopped or terminated.
-<ac:structured-macro ac:name="code">
-<ac:parameter ac:name="language">bash</ac:parameter>
-<ac:plain-text-body><![CDATA[
-aws ec2 describe-instances --instance-ids i-779wbdsu8 --region us-east-1
-]]></ac:plain-text-body>
-</ac:structured-macro>
-</li>
-<li>Examine the output. Look for the <code>InstanceState</code> field. If the state is not "running", start the instance using the command below after confirming this is the intended action.</li>
-<li>If the instance is stopped, start it using:
-<ac:structured-macro ac:name="code">
-<ac:parameter ac:name="language">bash</ac:parameter>
-<ac:plain-text-body><![CDATA[
-aws ec2 start-instances --instance-ids i-779wbdsu8 --region us-east-1
-]]></ac:plain-text-body>
-</ac:structured-macro>
-</li>
-<li>After starting, wait a few minutes and re-check the status to ensure it transitions to "running".</li>
-</ul>
-<h2>Verify Security Group Configuration</h2>
-<ul>
-<li>Use the following command to describe the security groups associated with the instance:
-<ac:structured-macro ac:name="code">
-<ac:parameter ac:name="language">bash</ac:parameter>
-<ac:plain-text-body><![CDATA[
-aws ec2 describe-instances --instance-ids i-779wbdsu8 --region us-east-1 --query 'Reservations[*].Instances[*].SecurityGroups[*].GroupId' --output text
-]]></ac:plain-text-body>
-</ac:structured-macro>
-</li>
-<li>For each security group ID obtained, describe the security group to check its inbound rules:
-<ac:structured-macro ac:name="code">
-<ac:parameter ac:name="language">bash</ac:parameter>
-<ac:plain-text-body><![CDATA[
-aws ec2 describe-security-groups --group-ids <security_group_id> --region us-east-1
-]]></ac:plain-text-body>
-</ac:structured-macro>
-</li>
-<li>Ensure that at least one security group allows inbound SSH access (port 22) from your CIDR range. If not, you will need to modify the security group.</li>
-<li>To add an SSH rule to a security group (replace <code>&lt;security_group_id&gt;</code> and <code>&lt;your_cidr&gt;</code> with appropriate values):
-<ac:structured-macro ac:name="code">
-<ac:parameter ac:name="language">bash</ac:parameter>
-<ac:plain-text-body><![CDATA[
-aws ec2 authorize-security-group-ingress --group-id <security_group_id> --protocol tcp --port 22 --cidr <your_cidr> --region us-east-1
-]]></ac:plain-text-body>
-</ac:structured-macro>
-</li>
-<li>Consider adding the "infrastructure" or "MASTER-SSH" security groups if they are available and appropriate for your environment.</li>
-</ul>
-<h2>Check Network Connectivity (Subnet Issue)</h2>
-<ul>
-<li>The documentation mentions that a "Network error: Connection refused" message after 15-30 seconds indicates a potential subnet or security group issue. The above security group check addresses the security group part.</li>
-<li>To further investigate subnet issues via the CLI, you would typically need to examine the route tables and network ACLs associated with the subnet your instance is in. This is more complex and might require identifying the subnet ID first using <code>describe-instances</code> and then querying route tables and ACLs. Since you indicated no recent changes, and this was working before, focus on the instance status and security group checks first.</li>
-</ul>
-<h2>SSHD Status (Less Likely if Previously Working)</h2>
-<ul>
-<li>If the SSH daemon (sshd) is not running, you'd typically get an immediate "Network error: Connection refused" message. Since the instance was working before, this is less likely, but you can attempt to connect to the instance and check the time it takes to receive the error. If immediate, this becomes more relevant.</li>
-<li>Unfortunately, directly checking the SSHD status via the AWS CLI without connecting to the instance is not straightforward. The "VZ Run Command" plugin mentioned in the documentation is not
+payload = {
+            #"id": page_id,
+            "type": "page",
+            "title": cloud_page_title,
+            "space": {"key": destination_space_key},
+            "version": {
+                "number": current_version + 1
+            },
+            "body": {
+                "storage": {
+                    "value": content_to_append,
+                    "representation": "storage"
+                }
+            }
+        }
