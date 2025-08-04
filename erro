@@ -1,19 +1,2 @@
-llm_resp = (await llm.ainvoke(doc_prompt)).content
-        llm_response_content = json_to_confluence_xhtml(llm_resp)
-        identified_cloud = (await llm.ainvoke(cloud_provider_prompt)).content.strip()
-        summarized_text = "No summary found."
-
-        # tp = state.get("destination_page_title")
-        # print(f"page title:: {tp}")
-
-        if state.get("destination_page_title"):
-            identified_cloud = state.get("destination_page_title")
-        print (f"llm_response_content {llm_response_content}")
-
-        result = {
-            "summarized_content": llm_response_content if llm_response_content else summarized_text,
-            "identified_cloud_provider": identified_cloud,
-            "mcp_tools": mcp_tools_instance
-        }
-        print("result:::::::::::::::::::::::",result)
-        return result
+import json
+print("Raw LLM JSON output:\n", json.dumps(json.loads(llm_resp), indent=2))
