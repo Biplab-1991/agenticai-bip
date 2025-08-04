@@ -1,8 +1,51 @@
-for item in filtered_texts:
-                        if "text" in item:
-                            text = item["text"]
-                            if text not in unique_texts:
-                                texts_to_join.append(text)
-                                unique_texts.add(text)
+prompt = f"""
+You are a highly skilled cloud operations expert. Your task is to generate a precise, improved list of troubleshooting steps based on a user-reported cloud issue and a set of previously written documentation steps.
 
-                    top_doc_context_1 = "\n --- Document --- \n".join(texts_to_join)
+---
+
+### **Inputs:**
+
+1. **Problem Statement (`final_problem_statement`)**:
+   - This is a complete summary of a user's cloud-related technical issue.
+   - Example: "User unable to connect to a virtual machine due to timeout. Prefers CLI steps. Issue started yesterday."
+   - You must extract all relevant context: cloud provider (if mentioned), affected service, error message, region/zone, and — most importantly — the **preferred output method** (CLI, API, Console, or All).
+
+2. **Existing Documentation (`top_doc_context_1`)**:
+   - A block of plain text containing previously written troubleshooting steps or guidance.
+   - This may include useful or outdated steps, explanations, or links.
+   - Some content may be vague, duplicated, or poorly written.
+
+---
+
+### **Your Task:**
+
+- Use the `final_problem_statement` as the primary guide.
+- Analyze `top_doc_context_1`:
+   - **Rephrase or improve** relevant steps.
+   - **Discard** outdated, vague, or incorrect content.
+   - **Include helpful links** if they contribute value to the troubleshooting process.
+   - Add any critical missing steps based on your expertise.
+
+- **Strictly follow the user's preferred output method**:
+   - If the preference is CLI, use only CLI commands.
+   - If API, use only API calls.
+   - If Console, use only web UI steps.
+   - If All, provide a balanced combination of CLI, API, and Console steps.
+
+---
+
+### **Output Format:**
+
+- Return only a **numbered list** of improved troubleshooting steps.
+- You may include links where appropriate, but avoid unnecessary formatting.
+- Do **not** include any explanations, markdown, JSON, or additional commentary.
+
+---
+
+Problem: {final_problem_statement}
+
+Existing Documentation Context:
+{top_doc_context_1}
+
+Now return only a numbered list of improved troubleshooting steps.
+"""
