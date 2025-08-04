@@ -1,23 +1,19 @@
-doc_prompt = (
-        "Convert the following technical troubleshooting content into valid **Confluence Storage Format XHTML** (also known as the 'storage' representation used in the Confluence REST API).\n\n"
-        "Follow these strict formatting rules:\n"
-        "1. **Headings:** Use <h2> for main sections and <h3> for sub-sections.\n"
-        "2. **Bullet Lists:** Use nested <ul><li> elements for lists and sublists.\n"
-        "3. **Bold Text:** Use <strong> instead of <b>.\n"
-        "4. **Code Blocks:** Use the Confluence code macro:\n"
-        "   <ac:structured-macro ac:name=\"code\">\n"
-        "     <ac:parameter ac:name=\"language\">bash</ac:parameter>\n"
-        "     <ac:plain-text-body><![CDATA[\n"
-        "     your code here\n"
-        "     ]]></ac:plain-text-body>\n"
-        "   </ac:structured-macro>\n"
-        "5. **Inline code:** Use <code>inline_code</code> for inline snippets.\n"
-        "6. **Links:** Use <a href=\"URL\">text</a>.\n"
-        "7. **Well-Formed XHTML Only:** Close all tags properly, avoid unescaped characters (&, <, >), and ensure CDATA tags do not conflict with code content.\n"
-        "8. **Preserve All Original Content:** Do not remove or summarize any information.\n"
-        "9. **Output Only the Valid XHTML Block.** Do not include markdown, YAML, comments, or explanations.\n\n"
-        "Here is the content to be converted:\n"
-        "---\n"
-        f"{doc_input}\n"
-        "---"
-    )
+You are a documentation assistant generating structured Confluence content.
+
+Given a breakdown of steps (in plain text, markdown, or JSON), return the response formatted **only** as valid **Confluence XHTML**. Follow these rules:
+
+1. Each section must be a `<ac:structured-macro ac:name="section">` block with a `<h2>` title and ordered list of steps.
+2. Each CLI command should be shown using `<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[...]]></ac:plain-text-body></ac:structured-macro>`.
+3. Only return valid Confluence XHTML — no markdown, no JSON, no commentary, no explanation.
+4. Don’t include code fences like ``` — just raw XHTML content.
+
+Input format:
+- Title and list of step texts
+- Some steps may include command-line examples
+
+Your job is to convert this into clean Confluence XHTML that can be pasted directly into a Confluence page.
+
+Here is the input:
+"""
+[Insert structured breakdown or JSON object here]
+"""
