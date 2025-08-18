@@ -177,10 +177,10 @@ class WorkflowService(BaseService):
                     metadata={"usecase": self.usecase_name, "context": self.context_name},
                     tags=["langgraph", "multi-agent"],
                 )
-                config = {"configurable": {"thread_id": thread_id}, "callbacks": [handler]}
+                config = RunnableConfig(configurable={"thread_id": thread_id, "callbacks": [handler]})
 
                 # Restore checkpoint
-                full_checkpoint = await checkpointer.aget(config)
+                full_checkpoint = await checkpointer.aget_tuple(config)
                 state_data = full_checkpoint["channel_values"] if full_checkpoint else None
                 logger.info(f"state_data:: {state_data}")
 
