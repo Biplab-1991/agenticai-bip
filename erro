@@ -3,29 +3,79 @@
             async with AsyncVegasSaver.execute() as checkpointer:
                 start_time = time.time()
 
-                # Define the graph
+                # --- Define Graph ---
                 graph = StateGraph(InputIntentAgentState)
 
-                # Add nodes
+                # Input agent node
                 graph.add_node("input", run_input_intent_agent)
+
+                # Intent agent node
                 graph.add_node("intent", run_input_intent_intent_agent)
 
-                # Entry point is input
+                # Supervisor node wraps routing logic
+                async def run_supervisor(state: dict, config: dict):
+                    AGENT_MAP = {
+                        "cloud_ops": cloud_ops_agent_runnable,
+                        "sysadmin": sysadmin_agent_runnable,
+                        "fallback": fallback_agent_runnable,
+                        "product_service": product_service_agent_runnable,
+                    }
+
+                    supervisor = build_supervisor_agent(
+                        state,
+                        cloud_ops_agent_runnable,
+                        sysadmin_agent_runnable,
+                        fallback_agent_runnable,
+                        product_service_agent_runnable,
+                    )
+
+                    supervisor_state = {
+                        "messages": [{
+                            "role": "user",
+                            "content": (
+                                f"Final Problem Statement: {state.get('final_problem_statement')}\n"
+                                f"Flow Type: {state.get('flow_type')}\n"
+                                f"Documentation: {state.get('documentation')}"
+                            )
+                        }]
+                    }
+
+                    supervisor_output = supervisor.invoke(supervisor_state)
+                    logger.info(f"Supervisor output: {supervisor_output}")
+
+                    # Extract agent name
+                    if isinstance(supervisor_output, dict) and 'messages' in supervisor_output:
+                        last_message = supervisor_output['messages'][-1]
+                        agent_name = getattr(last_message, 'content', str(last_message)).strip()
+                    else:
+                        agent_name = "fallback"
+
+                    # Route to target agent
+                    agent_runnable = AGENT_MAP.get(agent_name, fallback_agent_runnable)
+                    payload = {"agent_name": agent_name, "body": state}
+                    return await agent_runnable.ainvoke(payload)
+
+                graph.add_node("supervisor", run_supervisor)
+
+                # Entry point
                 graph.set_entry_point("input")
 
-                # Conditional routing: only go to "intent" if status=complete
+                # Conditional routing: input → intent OR end
                 graph.add_conditional_edges(
                     "input",
                     lambda s: "intent" if s.get("status") == "complete" else END,
-                    {"intent": "intent", END: END}
+                    {"intent": "intent", END: END},
                 )
-                graph.add_edge("intent", END)
+
+                # Intent always flows to supervisor
+                graph.add_edge("intent", "supervisor")
+                graph.add_edge("supervisor", END)
 
                 # Compile graph
                 app = graph.compile(checkpointer=checkpointer)
                 logger.info("LangGraph app compiled successfully.")
 
-                # Thread/session id handling
+                # Thread/session id
                 if request.thread_id:
                     thread_id = request.thread_id.strip()
                     logger.info(f"--- Resuming session (thread_id: {thread_id})")
@@ -41,7 +91,7 @@
                 )
                 config = {"configurable": {"thread_id": thread_id}, "callbacks": [handler]}
 
-                # Restore checkpoint if available
+                # Restore checkpoint
                 full_checkpoint = await checkpointer.aget(config)
                 state_data = full_checkpoint['channel_values'] if full_checkpoint else None
                 logger.info(f"state_data:: {state_data}")
@@ -61,63 +111,11 @@
                     current_state = state_data
                     current_state["last_input"] = request.user_query
 
-                # Run graph
+                # --- Run the graph ---
                 final_state = await app.ainvoke(current_state, config=config)
                 logger.info(f"final_state::{final_state}")
 
-                # --- Supervisor logic only after intent agent ---
-                if final_state.get("status") == "complete" and final_state.get("final_problem_statement"):
-                    logger.info("Invoking supervisor since intent agent completed.")
-
-                    AGENT_MAP = {
-                        "cloud_ops": cloud_ops_agent_runnable,
-                        "sysadmin": sysadmin_agent_runnable,
-                        "fallback": fallback_agent_runnable,
-                        "product_service": product_service_agent_runnable
-                    }
-
-                    supervisor = build_supervisor_agent(
-                        final_state,
-                        cloud_ops_agent_runnable,
-                        sysadmin_agent_runnable,
-                        fallback_agent_runnable,
-                        product_service_agent_runnable
-                    )
-                    logger.info(f"Supervisor agent built: {type(supervisor)}")
-
-                    # Prepare supervisor input
-                    supervisor_state = {
-                        "messages": [{
-                            "role": "user",
-                            "content": (
-                                f"Final Problem Statement: {final_state.get('final_problem_statement')}\n"
-                                f"Flow Type: {final_state.get('flow_type')}\n"
-                                f"Documentation: {final_state.get('documentation')}"
-                            )
-                        }]
-                    }
-
-                    supervisor_output = supervisor.invoke(supervisor_state)
-                    logger.info(f"Supervisor output: {supervisor_output}")
-
-                    # Extract agent name
-                    if isinstance(supervisor_output, dict) and 'messages' in supervisor_output:
-                        last_message = supervisor_output['messages'][-1]
-                        agent_name = getattr(last_message, 'content', str(last_message)).strip()
-                    else:
-                        logger.warning(f"Unexpected supervisor output format: {supervisor_output}")
-                        agent_name = "fallback"
-
-                    # Route to chosen agent
-                    agent_runnable = AGENT_MAP.get(agent_name, fallback_agent_runnable)
-                    payload = {"agent_name": agent_name, "body": final_state}
-                    final_agent_state = await agent_runnable.ainvoke(payload)
-                    return final_agent_state, {}
-
-                else:
-                    # Input not complete → return the state as-is
-                    logger.info("Skipping supervisor, input not complete.")
-                    return final_state, {}
+                return final_state, {}
 
         except Exception as e:
             logger.error(f"LangGraph invocation or state retrieval failed: {e}", exc_info=True)
