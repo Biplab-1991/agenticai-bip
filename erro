@@ -15,6 +15,7 @@ from pyvegas.core import get_settings
 from pyvegas.langx.callback import AsyncVegasCallbackHandler
 from pyvegas.langx.checkpointer import AsyncVegasSaver
 from pyvegas.serve.base import BaseService
+from langchain_core.runnables import RunnableConfig
 
 # LangGraph imports
 from langgraph.graph import StateGraph, END
@@ -46,7 +47,7 @@ from .models import InputRequest, InputResponse
 
 
 # === Supervisor Node ===
-async def run_supervisor(state: Dict[str, Any], config: Dict[str, Any]) -> Any:
+async def run_supervisor(state: Dict, *, config: RunnableConfig) -> dict:
     """
     Supervisor node wraps routing logic.
     LangGraph always provides (state, config).
