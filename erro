@@ -1,2 +1,213 @@
- Error connecting to SQLite: Synchronous calls to AsyncSqliteSaver are only allowed from a different thread. From the main thread, use the async interface. For example, use `await checkpointer.aget_tuple(...)` or `await graph.ainvoke(...)`.
-2025-08-18 04:31:40.462 | ERROR    | services.workflowservice:generate:207 - LangGraph invocation or state retrieval failed: Synchronous calls to AsyncSqliteSaver are only allowed from a different thread. From the main thread, use the async interface. For example, use `await checkpointer.aget_tuple(...)` or `await graph.ainvoke(...)`.
+import asyncio
+import os
+import time
+import uuid
+from typing import Any, Dict
+
+# PyVegas imports
+"""
+WorkflowService: Combines Input Agent and Intent Agent using LangGraph.
+
+This service orchestrates the agent workflow, manages session state,
+and handles requests/responses for the input_intent use case.
+"""
+from pyvegas.core import get_settings
+from pyvegas.langx.callback import AsyncVegasCallbackHandler
+from pyvegas.langx.checkpointer import AsyncVegasSaver
+from pyvegas.serve.base import BaseService
+
+# LangGraph imports
+from langgraph.graph import StateGraph, END
+
+# Pydantic imports
+from pydantic import Field
+
+# Optional: Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
+# --- Configuration and Logging ---
+settings = get_settings()
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.absolute()))
+
+# Local agent imports
+from agents.input import run_input_intent_agent, InputIntentAgentState
+from agents.intent import run_input_intent_intent_agent
+from agents.supervisor import build_supervisor_agent
+from agents.cloud_ops import cloud_ops_agent_runnable
+from agents.sysadmin import sysadmin_agent_runnable
+from agents.fallback import fallback_agent_runnable
+from agents.product_service import product_service_agent_runnable
+from utils.config import logger
+from .models import InputRequest, InputResponse
+
+
+# === Supervisor Node ===
+async def run_supervisor(state: Dict[str, Any], config: Dict[str, Any]) -> Any:
+    """
+    Supervisor node wraps routing logic.
+    LangGraph always provides (state, config).
+    """
+
+    AGENT_MAP = {
+        "cloud_ops": cloud_ops_agent_runnable,
+        "sysadmin": sysadmin_agent_runnable,
+        "fallback": fallback_agent_runnable,
+        "product_service": product_service_agent_runnable,
+    }
+
+    # Build supervisor agent
+    supervisor = build_supervisor_agent(
+        state,
+        cloud_ops_agent_runnable,
+        sysadmin_agent_runnable,
+        fallback_agent_runnable,
+        product_service_agent_runnable,
+    )
+
+    supervisor_state = {
+        "messages": [{
+            "role": "user",
+            "content": (
+                f"Final Problem Statement: {state.get('final_problem_statement')}\n"
+                f"Flow Type: {state.get('flow_type')}\n"
+                f"Documentation: {state.get('documentation')}"
+            )
+        }]
+    }
+
+    supervisor_output = supervisor.invoke(supervisor_state)
+    logger.info(f"Supervisor output: {supervisor_output}")
+
+    # Extract target agent name
+    if isinstance(supervisor_output, dict) and "messages" in supervisor_output:
+        last_message = supervisor_output["messages"][-1]
+        agent_name = getattr(last_message, "content", str(last_message)).strip()
+    else:
+        agent_name = "fallback"
+
+    # Route to agent
+    agent_runnable = AGENT_MAP.get(agent_name, fallback_agent_runnable)
+    payload = {"agent_name": agent_name, "body": state}
+
+    return await agent_runnable.ainvoke(payload)
+
+
+# === Main Service ===
+class WorkflowService(BaseService):
+    """
+    Main service class for the InputIntent agent.
+
+    Orchestrates agent graph, manages checkpoints, and processes user queries.
+    """
+
+    def __init__(self) -> None:
+        logger.info("Initializing WorkflowService")
+
+        # Load config
+        self.usecase_name = os.getenv("USECASE_NAME") or getattr(settings, "USECASE_NAME", None)
+        self.context_name = os.getenv("CONTEXT_NAME") or getattr(settings, "CONTEXT_NAME", None)
+        self.environment = os.getenv("ENVIRONMENT", None) or getattr(settings, "ENVIRONMENT", None)
+
+        # Validate config
+        if not self.usecase_name or not self.context_name:
+            raise ValueError(
+                f"USECASE_NAME or CONTEXT_NAME not set. "
+                f"Check - {__file__}:{__import__('inspect').currentframe().f_lineno}. "
+                "Please set USECASE_NAME and CONTEXT_NAME as environment variables or in your settings."
+            )
+
+        logger.info(
+            f"WorkflowService initialized with usecase={self.usecase_name}, context={self.context_name}"
+        )
+
+    @classmethod
+    def get_request_model(cls):
+        return InputRequest
+
+    @classmethod
+    def get_response_model(cls):
+        return InputResponse
+
+    async def generate(self, request: InputRequest):
+        try:
+            async with AsyncVegasSaver.execute() as checkpointer:
+                start_time = time.time()
+
+                # --- Build Graph ---
+                graph = StateGraph(InputIntentAgentState)
+
+                graph.add_node("input", run_input_intent_agent)
+                graph.add_node("intent", run_input_intent_intent_agent)
+                graph.add_node("supervisor", run_supervisor)
+
+                graph.set_entry_point("input")
+
+                # Input → Intent (if complete) or END
+                graph.add_conditional_edges(
+                    "input",
+                    lambda s: "intent" if s.get("status") == "complete" else END,
+                    {"intent": "intent", END: END},
+                )
+
+                # Intent → Supervisor → END
+                graph.add_edge("intent", "supervisor")
+                graph.add_edge("supervisor", END)
+
+                # Compile app
+                app = graph.compile(checkpointer=checkpointer)
+                logger.info("LangGraph app compiled successfully.")
+
+                # Thread/session id
+                if request.thread_id:
+                    thread_id = request.thread_id.strip()
+                    logger.info(f"--- Resuming session (thread_id: {thread_id})")
+                else:
+                    thread_id = str(uuid.uuid4())
+                    logger.info(f"--- Starting new session (thread_id: {thread_id})")
+
+                # LangGraph callback handler
+                handler = AsyncVegasCallbackHandler(
+                    session_id=thread_id,
+                    user_id="input-intent-user",
+                    metadata={"usecase": self.usecase_name, "context": self.context_name},
+                    tags=["langgraph", "multi-agent"],
+                )
+                config = {"configurable": {"thread_id": thread_id}, "callbacks": [handler]}
+
+                # Restore checkpoint
+                full_checkpoint = await checkpointer.aget(config)
+                state_data = full_checkpoint["channel_values"] if full_checkpoint else None
+                logger.info(f"state_data:: {state_data}")
+
+                # Init state
+                if not state_data:
+                    current_state = InputIntentAgentState(
+                        dialog=[],
+                        last_input=request.user_query,
+                        final_problem_statement="",
+                        flow_type="",
+                        documentation=[],
+                        thread_id=thread_id,
+                        source="",
+                    )
+                else:
+                    current_state = state_data
+                    current_state["last_input"] = request.user_query
+
+                # --- Run Graph ---
+                final_state = await app.ainvoke(current_state, config=config)
+                logger.info(f"final_state::{final_state}")
+
+                return final_state, {}
+
+        except Exception as e:
+            logger.error(f"LangGraph invocation or state retrieval failed: {e}", exc_info=True)
+            response = {
+                "error": f"An unexpected error occurred: {str(e)}",
+                "processing_time": time.time() - start_time,
+            }
+            return response, {}
