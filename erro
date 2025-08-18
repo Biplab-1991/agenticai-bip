@@ -1,3 +1,131 @@
+import asyncio
+import os
+import time
+import uuid
+from typing import Any
+
+# PyVegas imports
+"""
+WorkflowService: Combines Input Agent and Intent Agent using LangGraph.
+
+This service orchestrates the agent workflow, manages session state,
+and handles requests/responses for the input_intent use case.
+"""
+from pyvegas.core import get_settings
+from pyvegas.langx.callback import AsyncVegasCallbackHandler
+from pyvegas.langx.checkpointer import AsyncVegasSaver
+from pyvegas.serve.base import BaseService
+from pyvegas.serve.base.models import PyVegasBaseRequest, PyVegasBaseResponse
+
+# LangGraph and LangChain imports
+from langgraph.graph import StateGraph, END
+
+# Pydantic imports
+from pydantic import Field
+
+# Optional: Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
+# --- Configuration and Logging ---
+#logger = get_logger(__name__)
+settings = get_settings()
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.absolute()))
+
+from agents.input import run_input_intent_agent, InputIntentAgentState
+from agents.intent import run_input_intent_intent_agent
+from agents.supervisor import build_supervisor_agent
+from agents.cloud_ops import cloud_ops_agent_runnable
+from agents.sysadmin import sysadmin_agent_runnable
+from agents.fallback import fallback_agent_runnable
+from agents.product_service import product_service_agent_runnable
+from utils.config import logger
+from .models import InputRequest, InputResponse
+
+# Supervisor node wraps routing logic
+async def run_supervisor(state: dict):
+    AGENT_MAP = {
+        "cloud_ops": cloud_ops_agent_runnable,
+        "sysadmin": sysadmin_agent_runnable,
+        "fallback": fallback_agent_runnable,
+        "product_service": product_service_agent_runnable,
+    }
+
+    supervisor = build_supervisor_agent(
+        state,
+        cloud_ops_agent_runnable,
+        sysadmin_agent_runnable,
+        fallback_agent_runnable,
+        product_service_agent_runnable,
+    )
+
+    supervisor_state = {
+        "messages": [{
+            "role": "user",
+            "content": (
+                f"Final Problem Statement: {state.get('final_problem_statement')}\n"
+                f"Flow Type: {state.get('flow_type')}\n"
+                f"Documentation: {state.get('documentation')}"
+            )
+        }]
+    }
+
+    supervisor_output = supervisor.invoke(supervisor_state)
+    logger.info(f"Supervisor output: {supervisor_output}")
+
+    # Extract agent name
+    if isinstance(supervisor_output, dict) and 'messages' in supervisor_output:
+        last_message = supervisor_output['messages'][-1]
+        agent_name = getattr(last_message, 'content', str(last_message)).strip()
+    else:
+        agent_name = "fallback"
+
+    # Route to target agent
+    agent_runnable = AGENT_MAP.get(agent_name, fallback_agent_runnable)
+    payload = {"agent_name": agent_name, "body": state}
+    return await agent_runnable.ainvoke(payload)
+
+# --- Main Service Class ---
+class WorkflowService(BaseService):
+    """
+    Main service class for the InputIntent agent.
+
+    Initializes configuration, validates environment, and defines the
+    agent graph logic for processing user queries and generating responses.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the InputIntent agent service."""
+        logger.info("Initializing WorkflowService")
+
+        # Get configuration from environment variables or settings
+        self.usecase_name = os.getenv("USECASE_NAME") or getattr(settings, "USECASE_NAME", None)
+        self.context_name = os.getenv("CONTEXT_NAME") or getattr(settings, "CONTEXT_NAME", None)
+        self.environment = os.getenv("ENVIRONMENT", None) or getattr(settings, "ENVIRONMENT", None)
+
+        # Validate usecase_name and context_name
+        if not self.usecase_name or not self.context_name:
+            raise ValueError(
+                f"USECASE_NAME or CONTEXT_NAME not set. "
+                f"Check - {__file__}:{__import__('inspect').currentframe().f_lineno}. "
+                "Please set USECASE_NAME and CONTEXT_NAME as environment variables or in your settings to start the service."
+            )
+
+        logger.info(
+            f"WorkflowService initialized with usecase={self.usecase_name}, context={self.context_name}"  # noqa: E501
+        )
+
+    @classmethod
+    def get_request_model(cls):
+        return InputRequest
+
+    @classmethod
+    def get_response_model(cls):
+        return InputResponse
+
     async def generate(self, request: InputRequest):
         try:
             async with AsyncVegasSaver.execute() as checkpointer:
@@ -12,48 +140,6 @@
                 # Intent agent node
                 graph.add_node("intent", run_input_intent_intent_agent)
 
-                # Supervisor node wraps routing logic
-                async def run_supervisor(state: dict, config: dict):
-                    AGENT_MAP = {
-                        "cloud_ops": cloud_ops_agent_runnable,
-                        "sysadmin": sysadmin_agent_runnable,
-                        "fallback": fallback_agent_runnable,
-                        "product_service": product_service_agent_runnable,
-                    }
-
-                    supervisor = build_supervisor_agent(
-                        state,
-                        cloud_ops_agent_runnable,
-                        sysadmin_agent_runnable,
-                        fallback_agent_runnable,
-                        product_service_agent_runnable,
-                    )
-
-                    supervisor_state = {
-                        "messages": [{
-                            "role": "user",
-                            "content": (
-                                f"Final Problem Statement: {state.get('final_problem_statement')}\n"
-                                f"Flow Type: {state.get('flow_type')}\n"
-                                f"Documentation: {state.get('documentation')}"
-                            )
-                        }]
-                    }
-
-                    supervisor_output = supervisor.invoke(supervisor_state)
-                    logger.info(f"Supervisor output: {supervisor_output}")
-
-                    # Extract agent name
-                    if isinstance(supervisor_output, dict) and 'messages' in supervisor_output:
-                        last_message = supervisor_output['messages'][-1]
-                        agent_name = getattr(last_message, 'content', str(last_message)).strip()
-                    else:
-                        agent_name = "fallback"
-
-                    # Route to target agent
-                    agent_runnable = AGENT_MAP.get(agent_name, fallback_agent_runnable)
-                    payload = {"agent_name": agent_name, "body": state}
-                    return await agent_runnable.ainvoke(payload)
 
                 graph.add_node("supervisor", run_supervisor)
 
@@ -124,3 +210,13 @@
                 "processing_time": time.time() - start_time
             }
             return response, {}
+
+# #For local testing
+# if __name__ == "__main__":
+#     async def main() -> None:
+#         service = WorkflowService()
+#         test_query = "What is the weather in Paris?"
+#         request = InputRequest(user_query=test_query,thread_id="")
+#         response, _ = await service.generate(request)
+#         print("Response:", response.response)
+#         print("Reasoning:", response.reasoning)
