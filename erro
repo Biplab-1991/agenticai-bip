@@ -1,35 +1,4 @@
-import json
-from langchain.prompts import PromptTemplate
-from langchain_core.messages import HumanMessage
-from langchain_core.output_parsers import JsonOutputParser
-from typing import List, Literal, TypedDict, Annotated
-import sys
-from pathlib import Path
-import operator
-
-sys.path.insert(0, str(Path(__file__).parent.absolute()))
-from utils.config import llm, logger
-
-
-# State Schema
-class InputIntentAgentState(TypedDict):
-    dialog: Annotated[List[str], operator.add]
-    last_input: str
-    status: Literal["complete", "incomplete"]
-    final_problem_statement: str
-    messages: Annotated[List[dict], operator.add]
-    # Add other fields that might be used by input/intent agents, if not already in utils.types
-    flow_type: str
-    documentation: List[str]
-    next_question: str
-    thread_id: str
-    source: str
-
-
-# Prompt Template
-prompt_template = PromptTemplate(
-    input_variables=["dialog", "last_input"],
-    template="""
+formatted_prompt :: 
 **Initiate Interaction:** If this is the very first interaction (i.e., 'Dialog so far' is empty), begin with a warm and open-ended greeting, inviting the user to share their problem. For example: "Hi there! I'm here to help with any cloud or IT issues you're facing. What problem are you encountering today?"
 
 You are a helpful and intelligent assistant. Your primary role is to act as the initial point of contact, diligently collecting all essential details about a user's technical issue. Your goal is to construct a clear, comprehensive, and complete problem statement by asking intelligent, context-aware follow-up questions.
@@ -51,7 +20,7 @@ You are a helpful and intelligent assistant. Your primary role is to act as the 
     * **Action Attempted:** What the user was trying to do when the issue occurred.
     * **Contextual Details:** Has it ever worked before? What changed recently?
     * **Project name:** (if the problem is related to GCP)
-    * **Preferred Output Method:** How the user would like troubleshooting steps to be provided (e.g., CLI, Console, API, or All). You **MUST** ask for this if not provided.
+    * **Preferred Output Method:** How the user would like troubleshooting steps to be provided (e.g., CLI, Console, API, or All). You **MUST** ask for this if not provided.   
     * **Environment:** In which environment is the issue occurring (e.g., prod, non-prod)?
     * **Vsad:** The user is related to which vsad?
 
@@ -77,20 +46,20 @@ You are a helpful and intelligent assistant. Your primary role is to act as the 
     * Return **only** a valid JSON object. Do not wrap it in Markdown or any conversational explanation. The JSON should follow this exact structure:
 
     **For Cloud and Non-Cloud Issues:**
-    {{
+    {
     "dialog": [... list of user messages ...],
     "final_problem_statement": "... summary of issue including all collected details...",
     "status": "complete" | "incomplete",
     "next_question": "If status is incomplete, ask this question next"
-    }}
+    }
 
     **For Out-of-Scope Issues:**
-    {{
+    {
     "dialog": [... list of user messages ...],
     "final_problem_statement": "N/A",
     "status": "out_of_scope",
     "next_question": "I'm sorry, but my purpose is to help with cloud and IT issues. Please let me know about a specific problem you are facing."
-    }}
+    }
 
     * **Crucially, the `final_problem_statement` string MUST be formatted as a concise concatenation of all collected key-value pairs, even if some values are 'N/A' or 'null'. Example:**
     'The user is encountering an issue retrieving the status of EC2 instance i-guvww7671 in the AWS us-east-1 region. The instance status retrieval was previously working, and no recent changes have been made. The user prefers troubleshooting steps via API calls. Cloud Provider: AWS, Affected Service: EC2, Resource ID: i-guvww7671, Region: us-east-1, Action Attempted: Getting the status of the instance, Contextual Details: Was working fine before, preferred_output_methods : troubleshooting steps via API calls,  no recent changes, Preferred Output Method: API. getting the issue in prod(pr) or non-prod(np) environment, **VSAD of the user'
@@ -98,61 +67,12 @@ You are a helpful and intelligent assistant. Your primary role is to act as the 
 
 **Context for this interaction:**
 Dialog so far:
-{dialog}
+[{'role': 'user', 'content': "I'm encountering a permission issue when trying to create target groups for a production application. This was successful two weeks ago, but now I'm receiving errors."}, {'role': 'assistant', 'content': "I understand you're having permission issues creating target groups. To assist you effectively, could you please provide the following details: Which cloud provider are you using (e.g., AWS, Azure, GCP)? Which service are you using to create target groups (e.g., EC2, ECS, ALB)? What is the exact error message you are receiving? Also, what is your preferred method for receiving troubleshooting steps (e.g., CLI, Console, API, or All)? Finally, which VSAD are you related to?"}, {'role': 'user', 'content': "I'm encountering a permission issue when trying to create target groups for a production application. This was successful two weeks ago, but now I'm receiving errors."}, {'role': 'assistant', 'content': "I understand you're having permission issues creating target groups. To assist you effectively, could you please provide the following details: Which cloud provider are you using (e.g., AWS, Azure, GCP)? Which service are you using to create target groups (e.g., EC2, ECS, ALB)? What is the exact error message you are receiving? Also, what is your preferred method for receiving troubleshooting steps (e.g., CLI, Console, API, or All)? Finally, which VSAD are you related to?"}, {'role': 'user', 'content': "I'm encountering a permission issue when trying to create target groups for a production application. This was successful two weeks ago, but now I'm receiving errors."}, {'role': 'assistant', 'content': "I understand you're having permission issues creating target groups. To assist you effectively, could you please provide the following details: Which cloud provider are you using (e.g., AWS, Azure, GCP)? Which service are you using to create target groups (e.g., EC2, ECS, ALB)? What is the exact error message you are receiving? Also, what is your preferred method for receiving troubleshooting steps (e.g., CLI, Console, API, or All)? Finally, which VSAD are you related to?"}, {'role': 'user', 'content': "I'm encountering a permission issue when trying to create target groups for a production application. This was successful two weeks ago, but now I'm receiving errors."}, {'role': 'assistant', 'content': "I understand you're having permission issues creating target groups. To assist you effectively, could you please provide the following details: Which cloud provider are you using (e.g., AWS, Azure, GCP)? Which service are you using to create target groups (e.g., EC2, ECS, ALB)? What is the exact error message you are receiving? Also, what is your preferred method for receiving troubleshooting steps (e.g., CLI, Console, API, or All)? Finally, which VSAD are you related to?"}]
 New input from user:
-{last_input}
-"""
-)
-
-
-# Input Agent Definition
-def run_input_intent_agent(state: dict) -> dict:
-    parser = JsonOutputParser()
-    logger.info("State received by InputAgent:", state)  # 🔍 Debug
-
-    dialog = state.get("dialog", [])
-    last_input = state.get("last_input", "")
-    if len(dialog) > 10:
-        dialog = dialog[-10:]
-
-    try:
-        # Format the prompt
-        formatted_prompt = prompt_template.format(
-            dialog="\n".join(dialog),  # ensure clean string
-            last_input=last_input
-        )
-
-        response = llm.invoke([HumanMessage(content=formatted_prompt)])
-        logger.info(f"🔎 Gemini raw output: {response}")
-        parser_json = parser.invoke(response.content)
-        print(f"parser_json:: {parser_json}")
-
-        if not parser_json:
-            raise ValueError("Invalid JSON response from Gemini")
-
-        parsed = parser_json
-
-        # Append messages
-        dialog.append({"role": "user", "content": last_input})
-        if parsed.get("status") == "incomplete":
-            dialog.append({"role": "assistant", "content": parsed.get("next_question", "")})
-
-        return {
-            "dialog": dialog,
-            "final_problem_statement": parsed.get("final_problem_statement", ""),
-            "status": parsed.get("status", "incomplete"),
-            "next_question": parsed.get("next_question", ""),
-            "last_input": ""
-        }
-
-    except Exception as e:
-        logger.error(f"⚠️ Failed to parse Gemini response", {str(e)})
-        dialog.append({"role": "user", "content": last_input})
-        return {
-            "dialog": dialog,
-            "status": "error",
-            "message": f"Gemini returned invalid output. Error: {str(e)}",
-            "final_problem_statement": "",
-            "next_question": "",
-            "last_input": ""
-        }
+⦁       Code / Errors:
+The error details are as follows:
+"log": [
+  "AWS::EC2::SecurityGroup AppSecurityGroup CREATE_FAILED: Resource creation cancelled",
+  "AWS::SNS::Topic NotifyTopic CREATE_FAILED: Resource handler returned message: \\\"User: arn:aws:sts::691325891359:assumed-role/Vz-JenkinsService_R/Ansible_42280842_tellusa is not authorized to perform: SNS:Subscribe on resource: arn:aws:sns:us-east-1:691325891359:MTASBE-PLE2-USEAST1-ONEVZ-MTAS-JAVA-NEDRIVER-SERVICE-NED7IPV6GRP-NotifyTopic-ja78cq2vrLXu with an explicit deny in a service control policy (Service: Sns, Status Code: 403, Request ID: 48f0fefa-015a-592c-a6ba-9e1fd7bf25c4) (SDK Attempt Count: 1)\\\" (RequestToken: b4c0f764-0a1d-b947-bdb2-4a6325731968, HandlerErrorCode: AccessDenied)"
+]
+⦁       Add'l Links: https://jenkins-vcg3.vpc.verizon.com/vcg3/job/VZW.B6PV.MTASREARCH.FOLDER/job/VZW.B6PV.BACKEND.FOLDER/job/VZW.B6PV.DEPLOYMENTS.FOLDER/job/VZW.B6PV.MTAS_BE.ASG_PLE/3530/console
