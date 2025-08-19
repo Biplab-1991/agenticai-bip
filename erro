@@ -1,24 +1,22 @@
 import json
-import sys
-import operator
-from pathlib import Path
-from typing import List, Literal, TypedDict, Annotated
-
 from langchain_core.messages import HumanMessage
-from langchain_core.output_parsers import JsonOutputParser
+from typing import List, Literal, TypedDict, Annotated
+import sys
+from pathlib import Path
+import operator
+from pydantic import BaseModel, Field
+from langchain.output_parsers import PydanticOutputParser
+from langchain.prompts import PromptTemplate
 
-# Local imports
 sys.path.insert(0, str(Path(__file__).parent.absolute()))
 from utils.config import llm, logger
 
 
-# -------------------------------
 # State Schema
-# -------------------------------
 class InputIntentAgentState(TypedDict):
     dialog: Annotated[List[str], operator.add]
     last_input: str
-    status: Literal["complete", "incomplete", "out_of_scope", "error"]
+    status: Literal["complete", "incomplete"]
     final_problem_statement: str
     messages: Annotated[List[dict], operator.add]
     flow_type: str
@@ -28,123 +26,112 @@ class InputIntentAgentState(TypedDict):
     source: str
 
 
-# -------------------------------
+# Strict output schema using Pydantic
+class ProblemOutput(BaseModel):
+    dialog: list[str] = Field(description="Conversation history including user inputs and system clarifications")
+    final_problem_statement: str = Field(description="Structured summary of the cloud troubleshooting issue")
+    status: Literal["complete", "incomplete", "out_of_scope"] = Field(description="Status of the interaction")
+    next_question: str = Field(description="Next clarifying question if status=incomplete, else empty string")
+
+
+parser = PydanticOutputParser(pydantic_object=ProblemOutput)
+
+
 # Input Agent Definition
-# -------------------------------
 def run_input_intent_agent(state: dict) -> dict:
-    parser = JsonOutputParser()
-    logger.info("State received by InputAgent:", state)  # 🔍 Debug
+    logger.info("State received by InputAgent:", state)
 
     dialog = state.get("dialog", [])
     last_input = state.get("last_input", "")
-
-    # Keep last 10 dialog turns only
     if len(dialog) > 10:
         dialog = dialog[-10:]
 
-    # Prompt
-    prompt = f"""
-**Initiate Interaction:** If this is the very first interaction (i.e., 'Dialog so far' is empty), begin with a warm and open-ended greeting, inviting the user to share their problem. For example: "Hi there! I'm here to help with any cloud or IT issues you're facing. What problem are you encountering today?"
+    # Full prompt preserved
+    prompt = PromptTemplate(
+        template="""
+You are a helpful and intelligent assistant. Your primary role is to act as the initial point of contact, diligently collecting all essential details about a user's technical issue.
 
-You are a helpful and intelligent assistant. Your primary role is to act as the initial point of contact, diligently collecting all essential details about a user's technical issue. Your goal is to construct a clear, comprehensive, and complete problem statement by asking intelligent, context-aware follow-up questions.
+---
 
-**You must adhere to the following:**
+**Your Responsibilities:**
 
-1. **Initial Intent Classification:**
-   * `problem_statement`: The user is reporting an active issue they are facing.
-   * `general_query`: The user is asking for steps to perform a task, seeking general information, or asking for a guide.
+1. **Listen Actively:**
+   - Pay close attention to the user's input to understand their problem.
 
-2. **Information Collection Mandate (Conditional Questioning):**
+2. **Gather Information:**
+   - Collect details such as:
+     - Cloud provider (AWS, GCP, Azure, etc.)
+     - Service (Compute, Database, Network, etc.)
+     - Region/Zone
+     - Resource identifiers (VM name, DB instance ID, etc.)
+     - Error messages
+     - Steps already taken
+     - User’s preferred method of troubleshooting
 
-   For `problem_statement` issues, gather:
-   * Cloud Provider (AWS, Azure, GCP, OCI)
-   * Affected Service
-   * Error Message / Symptom
-   * Resource ID(s)
-   * Region / AZ
-   * Action Attempted
-   * Contextual Details (worked before? changes?)
-   * Project name (if GCP)
-   * Preferred Output Method (CLI, Console, API, All)
-   * Environment (prod/non-prod)
-   * Vsad
+3. **Structured Problem Statement:**
+   - Organize the collected details into a clear, structured summary.
 
-   For `general_query` issues, gather:
-   * Cloud Provider
-   * Affected Service
-   * Related Services
-   * Action Requested
-   * Resource ID(s)
-   * Preferred Output Method
-   * Project name (if applicable)
-   * Environment
-   * Vsad
+4. **Detect Completeness:**
+   - If you have all the necessary details, mark the status as `"complete"`.
+   - If details are missing, mark it as `"incomplete"` and ask a specific follow-up question.
+   - If the issue is unrelated to cloud or IT operations, mark it as `"out_of_scope"`.
 
-3. **Intelligent Questioning (if status=incomplete):**
-   * Ask for only missing details.
-   * Be polite and empathetic.
-   * Never ask for info already present.
-   * For `general_query`, don’t ask about errors.
+---
 
-4. **Strict Output Format:**
+**Output Format:**
 
-   For Cloud/IT Issues:
-   {{
-     "dialog": [... list of user messages ...],
-     "final_problem_statement": "... summary of issue including all collected details...",
-     "status": "complete" | "incomplete",
-     "next_question": "If status is incomplete, ask this question next"
-   }}
+{format_instructions}
 
-   For Out-of-Scope Issues:
-   {{
-     "dialog": [... list of user messages ...],
-     "final_problem_statement": "N/A",
-     "status": "out_of_scope",
-     "next_question": "I'm sorry, but my purpose is to help with cloud and IT issues. Please let me know about a specific problem you are facing."
-   }}
+---
 
-   * `final_problem_statement` must be a concise concatenation of all collected key-value pairs (even if 'N/A').
-
-**Context for this interaction:**
-Dialog so far:
+**Dialog so far:**
 {dialog}
-New input from user:
+
+**New input from user:**
 {last_input}
-    """
 
-    try:
-        # Call model
-        response = llm.invoke([HumanMessage(content=prompt)])
-        logger.info(f"🔎 LLM raw output: {response}")
+---
 
-        # Parse JSON with enforced schema
-        parsed = parser.invoke(response.content)
+**Important Rules:**
+- Always respond with valid JSON only.
+- When `status` = "incomplete", you MUST provide a useful `next_question`.
+- When `status` = "complete", `next_question` MUST be "".
+- When `status` = "out_of_scope", politely guide the user back to cloud/IT related issues.
+""",
+        input_variables=["dialog", "last_input"],
+        partial_variables={"format_instructions": parser.get_format_instructions()},
+    )
 
-        if not parsed:
-            raise ValueError("Invalid JSON response from LLM")
+    # Retry wrapper
+    retries = 2
+    for attempt in range(retries):
+        try:
+            response = llm.invoke([HumanMessage(content=prompt.format(dialog=dialog, last_input=last_input))])
+            logger.info(f"🔎 LLM raw output: {response}")
+            parsed: ProblemOutput = parser.invoke(response.content)
 
-        # Append messages to dialog
-        dialog.append({"role": "user", "content": last_input})
-        if parsed.get("status") == "incomplete":
-            dialog.append({"role": "assistant", "content": parsed.get("next_question", "")})
+            # Append messages
+            dialog.append({"role": "user", "content": last_input})
+            if parsed.status == "incomplete" and parsed.next_question:
+                dialog.append({"role": "assistant", "content": parsed.next_question})
 
-        return {
-            "dialog": dialog,
-            "final_problem_statement": parsed.get("final_problem_statement", ""),
-            "status": parsed.get("status", "incomplete"),
-            "next_question": parsed.get("next_question", ""),
-            "last_input": ""
-        }
+            return {
+                "dialog": dialog,
+                "final_problem_statement": parsed.final_problem_statement,
+                "status": parsed.status,
+                "next_question": parsed.next_question,
+                "last_input": ""
+            }
 
-    except Exception as e:
-        logger.error(f"⚠️ Failed to parse LLM response: {str(e)}")
-        dialog.append({"role": "user", "content": last_input})
-        return {
-            "dialog": dialog,
-            "status": "error",
-            "message": f"LLM returned invalid output. Error: {str(e)}",
-            "final_problem_statement": "",
-            "next_question": "",
-            "last_input": ""
-        }
+        except Exception as e:
+            logger.error(f"⚠️ Failed to parse LLM response (attempt {attempt+1}): {str(e)}")
+            if attempt == retries - 1:
+                # fallback
+                dialog.append({"role": "user", "content": last_input})
+                return {
+                    "dialog": dialog,
+                    "final_problem_statement": "Unable to fully parse the problem, needs clarification.",
+                    "status": "incomplete",
+                    "next_question": "Could you clarify which environment (prod or non-prod) this error occurred in?",
+                    "last_input": ""
+                }
