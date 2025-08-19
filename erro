@@ -1,2 +1,6 @@
-# Convert messages into plain text history for the LLM
-    history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages[-10:]])  # keep last 10
+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
+
+
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
