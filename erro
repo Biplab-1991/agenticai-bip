@@ -212,3 +212,47 @@ class WorkflowService(BaseService):
                 "processing_time": time.time() - start_time,
             }
             return response, {}
+
+
+"""
+
+You are required to return only a valid JSON object.
+
+Follow these rules strictly:
+
+- Do not include explanations, prose, markdown, or code fences.
+
+- Use double-quoted keys and string values.
+
+- Keys must be exactly: dialog, final_statement, status, next_question.
+
+- status must be "complete" or "incomplete".
+
+- If status = "incomplete", you must include next_question with a concise follow-up question.
+
+- If status = "complete", either omit next_question or set it to null.
+
+and here is rhe json schema you have to follow 
+
+{
+  "type": "object",
+  "properties": {
+    "dialog": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "final_statement": { "type": "string" },
+    "status": { "type": "string", "enum": ["complete", "incomplete"] },
+    "next_question": { "type": ["string", "null"] }
+  },
+  "required": ["dialog", "final_statement", "status"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "incomplete" } }, "required": ["status"] },
+      "then": { "required": ["next_question"] }
+    }
+  ]
+}
+
+"""
