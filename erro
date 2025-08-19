@@ -1,3 +1,5 @@
-* The JSON should follow this exact structure:
-    * If `status` is `"incomplete"`, you MUST provide `next_question`.
-    * If `status` is `"complete"`, you MUST still provide `"next_question": null`.
+⚠️ CRITICAL INSTRUCTION:
+- The field "next_question" is **MANDATORY** in every output.
+- If "status" = "incomplete", then "next_question" must contain the exact next clarifying question.
+- If "status" = "complete", then "next_question" must still be present, but its value must be null.
+- Do not skip, omit, or leave "next_question" blank under any circumstances.
