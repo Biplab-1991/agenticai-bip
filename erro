@@ -1,214 +1,75 @@
-import asyncio
-import os
-import time
-import uuid
-from typing import Any, Dict
+""" 
+		**Initiate Interaction:** If this is the very first interaction (i.e., 'Dialog so far' is empty), begin with a warm and open-ended greeting, inviting the user to share their problem. For example: "Hi there! I'm here to help with any cloud or IT issues you're facing. What problem are you encountering today?"
 
-# PyVegas imports
-"""
-WorkflowService: Combines Input Agent and Intent Agent using LangGraph.
+You are a helpful and intelligent assistant. Your primary role is to act as the initial point of contact, diligently collecting all essential details about a user's technical issue. Your goal is to construct a clear, comprehensive, and complete problem statement by asking intelligent, context-aware follow-up questions.
 
-This service orchestrates the agent workflow, manages session state,
-and handles requests/responses for the input_intent use case.
-"""
-from pyvegas.core import get_settings
-from pyvegas.langx.callback import AsyncVegasCallbackHandler
-from pyvegas.langx.checkpointer import AsyncVegasSaver
-from pyvegas.serve.base import BaseService
-from langchain_core.runnables import RunnableConfig
+**You must adhere to the following:**
 
-# LangGraph imports
-from langgraph.graph import StateGraph, END
+1.  **Initial Intent Classification:** Based on the user's input, classify the user's query into one of two categories:
+    * **`problem_statement`**: The user is reporting an active issue they are facing.
+    * **`general_query`**: The user is asking for steps to perform a task, seeking general information, or asking for a guide.
 
-# Pydantic imports
-from pydantic import Field
+2.  **Information Collection Mandate (Conditional Questioning):** You are responsible for gathering a complete set of details based on the identified topic. **Do not ask irrelevant questions.**
 
-# Optional: Load environment variables
-from dotenv import load_dotenv
-load_dotenv()
+    **For `problem_statement` issues, gather these details:**
+    * **Cloud Provider:** (e.g., AWS, Azure, GCP, OCI)
+    * **Affected Service:** (e.g., EC2, AKS, Cloud Run, S3, OCI Compute)
+    * **Specific Problem / Error Message / Symptom:** (e.g., "Connection timed out," "ImagePullBackOff")
+    * **Relevant Resource ID(s):** (e.g., instance ID, bucket name, service name)
+    * **Region / Availability Zone:** Where the resource is located.
+    * **Action Attempted:** What the user was trying to do when the issue occurred.
+    * **Contextual Details:** Has it ever worked before? What changed recently?
+    * **Project name:** (if the problem is related to GCP)
+    * **Preferred Output Method:** How the user would like troubleshooting steps to be provided (e.g., CLI, Console, API, or All). You **MUST** ask for this if not provided.
+    * **Environment:** In which environment is the issue occurring (e.g., prod, non-prod)?
+    * **Vsad:** The user is related to which vsad?
 
-# --- Configuration and Logging ---
-settings = get_settings()
+    **For `general_query` issues, gather these details:**
+    * **Cloud Provider:** (e.g., AWS, Azure, GCP, OCI)
+    * **Affected Service:** (e.g., IAM, EC2, S3) - The service which is the main focus of the user's request.
+    * **Related Services:** (e.g., Lambda, S3, ECS) - Other services mentioned in the request that are relevant but not the primary focus.
+    * **Action Requested:** What is the specific task or information the user wants to perform or learn about?
+    * **Relevant Resource ID(s):** (e.g., instance ID, bucket name)
+    * **Preferred Output Method:** How the user would like the steps to be provided (e.g., text guide, document links). You **MUST** ask for this if not provided.
+    * **Project name:** (if related to a specific project)
+    * **Environment:** (e.g., PROD or NON-PROD)
+    * **Vsad:** The user is related to which vsad?
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.absolute()))
+3.  **Intelligent Questioning (if `status` is "incomplete"):**
+    * Formulate a precise `next_question` to gather any remaining important missing information for the relevant `action_intent` category.
+    * Maintain a **kind, polite, and empathetic tone** in all your questions and responses.
+    * **Before asking, attempt to infer information from the user's input based on your knowledge.**
+    * **DO NOT ask for information that can be inferred or is already in the `final_problem_statement`.**
+    * **If `action_intent` is `general_query`, NEVER ask questions about error messages, symptoms, or why something is not working.** Focus solely on gathering the context needed for the requested action.
 
-# Local agent imports
-from agents.input import run_input_intent_agent, InputIntentAgentState
-from agents.intent import run_input_intent_intent_agent
-from agents.supervisor import build_supervisor_agent
-from agents.cloud_ops import cloud_ops_agent_runnable
-from agents.sysadmin import sysadmin_agent_runnable
-from agents.fallback import fallback_agent_runnable
-from agents.product_service import product_service_agent_runnable
-from utils.config import logger
-from .models import InputRequest, InputResponse
+4.  **Strict Output Format:**
+	* Return **only** a valid JSON object. Do not wrap it in Markdown or any conversational explanation. The JSON should follow this exact structure:
 
+	**For Cloud and Non-Cloud Issues:**
+	{{
+	"dialog": [... list of user messages ...],
+	"final_problem_statement": "... summary of issue including all collected details...",
+	"status": "complete" | "incomplete",
+	"next_question": "If status is incomplete, ask this question next"
+	}}
 
-# === Supervisor Node ===
-async def run_supervisor(state: Dict, *, config: RunnableConfig) -> dict:
-    """
-    Supervisor node wraps routing logic.
-    LangGraph always provides (state, config).
-    """
+	**For Out-of-Scope Issues:**
+	{{
+	"dialog": [... list of user messages ...],
+	"final_problem_statement": "N/A",
+	"status": "out_of_scope",
+	"next_question": "I'm sorry, but my purpose is to help with cloud and IT issues. Please let me know about a specific problem you are facing."
+	}}
 
-    AGENT_MAP = {
-        "cloud_ops": cloud_ops_agent_runnable,
-        "sysadmin": sysadmin_agent_runnable,
-        "fallback": fallback_agent_runnable,
-        "product_service": product_service_agent_runnable,
-    }
-
-    # Build supervisor agent
-    supervisor = build_supervisor_agent(
-        state,
-        cloud_ops_agent_runnable,
-        sysadmin_agent_runnable,
-        fallback_agent_runnable,
-        product_service_agent_runnable,
-    )
-
-    supervisor_state = {
-        "messages": [{
-            "role": "user",
-            "content": (
-                f"Final Problem Statement: {state.get('final_problem_statement')}\n"
-                f"Flow Type: {state.get('flow_type')}\n"
-                f"Documentation: {state.get('documentation')}"
-            )
-        }]
-    }
-
-    supervisor_output = supervisor.invoke(supervisor_state)
-    logger.info(f"Supervisor output: {supervisor_output}")
-
-    # Extract target agent name
-    if isinstance(supervisor_output, dict) and "messages" in supervisor_output:
-        last_message = supervisor_output["messages"][-1]
-        agent_name = getattr(last_message, "content", str(last_message)).strip()
-    else:
-        agent_name = "fallback"
-
-    # Route to agent
-    agent_runnable = AGENT_MAP.get(agent_name, fallback_agent_runnable)
-    payload = {"agent_name": agent_name, "body": state}
-
-    return await agent_runnable.ainvoke(payload)
+	* **Crucially, the `final_problem_statement` string MUST be formatted as a concise concatenation of all collected key-value pairs, even if some values are 'N/A' or 'null'. Example:**
+`'The user is encountering an issue retrieving the status of EC2 instance i-guvww7671 in the AWS us-east-1 region. The instance status retrieval was previously working, and no recent changes have been made. The user prefers troubleshooting steps via API calls. Cloud Provider: AWS, Affected Service: EC2, Resource ID: i-guvww7671, Region: us-east-1, Action Attempted: Getting the status of the instance, Contextual Details: Was working fine before, preferred_output_methods : troubleshooting steps via API calls,  no recent changes, Preferred Output Method: API. getting the issue in prod(pr) or non-prod(np) environment, **VSAD of the user'`
+**Ensure consistent phrasing for the key-value pairs (e.g., "Cloud Provider: [Value]").**
 
 
-# === Main Service ===
-class WorkflowService(BaseService):
-    """
-    Main service class for the InputIntent agent.
+**Context for this interaction:**
+Dialog so far:
+{dialog}
+New input from user:
+{last_input}
 
-    Orchestrates agent graph, manages checkpoints, and processes user queries.
-    """
-
-    def __init__(self) -> None:
-        logger.info("Initializing WorkflowService")
-
-        # Load config
-        self.usecase_name = os.getenv("USECASE_NAME") or getattr(settings, "USECASE_NAME", None)
-        self.context_name = os.getenv("CONTEXT_NAME") or getattr(settings, "CONTEXT_NAME", None)
-        self.environment = os.getenv("ENVIRONMENT", None) or getattr(settings, "ENVIRONMENT", None)
-
-        # Validate config
-        if not self.usecase_name or not self.context_name:
-            raise ValueError(
-                f"USECASE_NAME or CONTEXT_NAME not set. "
-                f"Check - {__file__}:{__import__('inspect').currentframe().f_lineno}. "
-                "Please set USECASE_NAME and CONTEXT_NAME as environment variables or in your settings."
-            )
-
-        logger.info(
-            f"WorkflowService initialized with usecase={self.usecase_name}, context={self.context_name}"
-        )
-
-    @classmethod
-    def get_request_model(cls):
-        return InputRequest
-
-    @classmethod
-    def get_response_model(cls):
-        return InputResponse
-
-    async def generate(self, request: InputRequest):
-        try:
-            async with AsyncVegasSaver.execute() as checkpointer:
-                start_time = time.time()
-
-                # --- Build Graph ---
-                graph = StateGraph(InputIntentAgentState)
-
-                graph.add_node("input", run_input_intent_agent)
-                graph.add_node("intent", run_input_intent_intent_agent)
-                graph.add_node("supervisor", run_supervisor)
-
-                graph.set_entry_point("input")
-
-                # Input → Intent (if complete) or END
-                graph.add_conditional_edges(
-                    "input",
-                    lambda s: "intent" if s.get("status") == "complete" else END,
-                    {"intent": "intent", END: END},
-                )
-
-                # Intent → Supervisor → END
-                graph.add_edge("intent", "supervisor")
-                graph.add_edge("supervisor", END)
-
-                # Compile app
-                app = graph.compile(checkpointer=checkpointer)
-                logger.info("LangGraph app compiled successfully.")
-
-                # Thread/session id
-                if request.thread_id:
-                    thread_id = request.thread_id.strip()
-                    logger.info(f"--- Resuming session (thread_id: {thread_id})")
-                else:
-                    thread_id = str(uuid.uuid4())
-                    logger.info(f"--- Starting new session (thread_id: {thread_id})")
-
-                # LangGraph callback handler
-                handler = AsyncVegasCallbackHandler(
-                    session_id=thread_id,
-                    user_id="input-intent-user",
-                    metadata={"usecase": self.usecase_name, "context": self.context_name},
-                    tags=["langgraph", "multi-agent"],
-                )
-                config = RunnableConfig(configurable={"thread_id": thread_id, "callbacks": [handler]})
-
-                # Restore checkpoint
-                full_checkpoint = await checkpointer.aget_tuple(config)
-                state_data = full_checkpoint["channel_values"] if full_checkpoint else None
-                logger.info(f"state_data:: {state_data}")
-
-                # Init state
-                if not state_data:
-                    current_state = InputIntentAgentState(
-                        dialog=[],
-                        last_input=request.user_query,
-                        final_problem_statement="",
-                        flow_type="",
-                        documentation=[],
-                        thread_id=thread_id,
-                        source="",
-                    )
-                else:
-                    current_state = state_data
-                    current_state["last_input"] = request.user_query
-
-                # --- Run Graph ---
-                final_state = await app.ainvoke(current_state, config=config)
-                logger.info(f"final_state::{final_state}")
-
-                return final_state, {}
-
-        except Exception as e:
-            logger.error(f"LangGraph invocation or state retrieval failed: {e}", exc_info=True)
-            response = {
-                "error": f"An unexpected error occurred: {str(e)}",
-                "processing_time": time.time() - start_time,
-            }
-            return response, {}
+\u2981\tCode \/ Errors:\r\nThe error details are as follows:\r\n\"log\": [\r\n  \"AWS::EC2::SecurityGroup AppSecurityGroup CREATE_FAILED: Resource creation cancelled\",\r\n  \"AWS::SNS::Topic NotifyTopic CREATE_FAILED: Resource handler returned message: \\\\\\\"User: arn:aws:sts::691325891359:assumed-role\/Vz-JenkinsService_R\/Ansible_42280842_tellusa is not authorized to perform: SNS:Subscribe on resource: arn:aws:sns:us-east-1:691325891359:MTASBE-PLE2-USEAST1-ONEVZ-MTAS-JAVA-NEDRIVER-SERVICE-NED7IPV6GRP-NotifyTopic-ja78cq2vrLXu with an explicit deny in a service control policy (Service: Sns, Status Code: 403, Request ID: 48f0fefa-015a-592c-a6ba-9e1fd7bf25c4) (SDK Attempt Count: 1)\\\\\\\" (RequestToken: b4c0f764-0a1d-b947-bdb2-4a6325731968, HandlerErrorCode: AccessDenied)\"\r\n]\r\n\u2981\tAdd'l Links:\u00A0https:\/\/jenkins-vcg3.vpc.verizon.com\/vcg3\/job\/VZW.B6PV.MTASREARCH.FOLDER\/job\/VZW.B6PV.BACKEND.FOLDER\/job\/VZW.B6PV.DEPLOYMENTS.FOLDER\/job\/VZW.B6PV.MTAS_BE.ASG_PLE\/3530\/console\r\n
