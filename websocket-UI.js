@@ -1,41 +1,34 @@
 import React, { useEffect, useState } from "react";
+import io from "socket.io-client";
 
-function JobRunner() {
+const socket = io("http://localhost:4000"); // Node.js WS server
+
+export default function App() {
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
-    const ws = new WebSocket("ws://localhost:8080");
+    socket.on("progress", (msg) => {
+      setMessages((prev) => [...prev, `Progress: ${msg.status}`]);
+    });
 
-    ws.onopen = () => {
-      console.log("Connected to WebSocket server");
-      // Start the job immediately (you can trigger this via button click instead)
-      ws.send(JSON.stringify({ type: "start_job", jobId: "1234", params: { foo: "bar" } }));
+    socket.on("done", (msg) => {
+      setMessages((prev) => [...prev, `Done: ${msg.result}`]);
+    });
+
+    return () => {
+      socket.off("progress");
+      socket.off("done");
     };
-
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      setMessages((prev) => [...prev, msg]);
-    };
-
-    ws.onclose = () => console.log("Disconnected from WebSocket server");
-
-    return () => ws.close();
   }, []);
 
   return (
     <div>
-      <h2>Job Status</h2>
+      <h1>Live Job Status</h1>
       <ul>
         {messages.map((m, i) => (
-          <li key={i}>
-            {m.status === "started" && <>🚀 Job {m.jobId} started</>}
-            {m.status === "completed" && <>✅ Result: {JSON.stringify(m.result)}</>}
-            {m.status === "error" && <>❌ Error: {m.error}</>}
-          </li>
+          <li key={i}>{m}</li>
         ))}
       </ul>
     </div>
   );
 }
-
-export default JobRunner;
