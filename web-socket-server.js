@@ -1,35 +1,33 @@
-// server.js
-const WebSocket = require("ws");
-const axios = require("axios");
+// install: npm install express socket.io
+const express = require("express");
+const { createServer } = require("http");
+const { Server } = require("socket.io");
 
-const wss = new WebSocket.Server({ port: 8080 });
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: "*" }, // allow React UI
+});
 
-wss.on("connection", (ws) => {
-  console.log("Client connected");
+io.on("connection", (socket) => {
+  console.log("⚡ Client connected:", socket.id);
 
-  ws.on("message", async (message) => {
-    const data = JSON.parse(message);
-
-    if (data.type === "start_job") {
-      // 1. Immediately notify client
-      ws.send(JSON.stringify({ status: "started", jobId: data.jobId }));
-
-      try {
-        // 2. Call Python API (long running)
-        const response = await axios.post("http://localhost:5000/your-python-endpoint", {
-          jobId: data.jobId,
-          params: data.params
-        });
-
-        // 3. Once done, send final result
-        ws.send(JSON.stringify({ status: "completed", jobId: data.jobId, result: response.data }));
-      } catch (err) {
-        ws.send(JSON.stringify({ status: "error", jobId: data.jobId, error: err.message }));
-      }
-    }
+  // Forward any Python messages to all UI clients
+  socket.on("progress", (msg) => {
+    console.log("Progress from Python:", msg);
+    io.emit("progress", msg); // broadcast to React
   });
 
-  ws.on("close", () => {
+  socket.on("done", (msg) => {
+    console.log("Done from Python:", msg);
+    io.emit("done", msg); // broadcast to React
+  });
+
+  socket.on("disconnect", () => {
     console.log("Client disconnected");
   });
+});
+
+httpServer.listen(4000, () => {
+  console.log("🚀 WebSocket server running on http://localhost:4000");
 });
