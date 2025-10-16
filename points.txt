@@ -1,0 +1,7 @@
+Use a WebSocket Server as a central communication channel between the React UI and the Long-Running API.
+
+The React UI sends a request (with session ID) to the WebSocket server, which triggers a fire-and-forget call to the long-running API.
+
+The Long-Running API emits live progress updates (step-by-step status) and finally sends the result back to the WebSocket server.
+
+The WebSocket server pushes these updates in real time to the React UI, ensuring the user always sees current execution status.
