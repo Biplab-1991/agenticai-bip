@@ -1,0 +1,46 @@
+| Cloud Run                   | Service Account Should Belong To                 | Purpose                                                                     |
+| --------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| `agent-service` (Project B) | `mcp-agent-sa@project-b.iam.gserviceaccount.com` | Used for **outgoing identity** when making calls                            |
+| `tools-service` (Project A) | `mcp-tools-sa@project-a.iam.gserviceaccount.com` | Used for **executing code inside** the tool service, not for authentication |
+
+
+
+gcloud run services add-iam-policy-binding tools-service \
+  --member="serviceAccount:mcp-agent-sa@project-b.iam.gserviceaccount.com" \
+  --role="roles/run.invoker" \
+  --project=project-a
+
+import google.auth.transport.requests
+import google.oauth2.id_token
+import requests
+from langgraph.mcp.client import MCPServerClient
+
+class GCPAuthSession(requests.Session):
+    def __init__(self, audience: str):
+        super().__init__()
+        self.audience = audience
+
+    def request(self, method, url, **kwargs):
+        auth_req = google.auth.transport.requests.Request()
+        id_token = google.oauth2.id_token.fetch_id_token(auth_req, self.audience)
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {id_token}"
+        kwargs["headers"] = headers
+        return super().request(method, url, **kwargs)
+
+# Cloud Run URL of your MCP tool
+tool_url = "https://mcp-tools-service-<region>-a.run.app"
+
+# Create an authenticated session
+auth_session = GCPAuthSession(audience=tool_url)
+
+# Initialize MCP client with the authenticated session
+mcp_client = MCPServerClient(
+    url=tool_url,
+    transport="http",
+    session=auth_session  # Use our custom GCP-authenticated session
+)
+
+# Example call
+response = mcp_client.call_tool("add", {"a": 2, "b": 3})
+print(response)
