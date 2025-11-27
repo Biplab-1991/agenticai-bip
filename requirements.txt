@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+websockets
+httpx
+PyJWT
+watchtower
+boto3
+requests
+python-dotenv
+redis
+valkey-glide
