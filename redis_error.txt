@@ -1,0 +1,20 @@
+Health check failed: 13684 h9vv-ccs-cache-np-w1-0001-001.h9vv-ccs-cache-np-w1.is3heo.usw2.cache.amazonaws.com:6379
+2025-11-26 22:56:05 - ccs-websocket-10.118.87.124 - WARNING - ElastiCache health check failed, attempting reconnection
+2025-11-26 22:56:06 - ccs-websocket-10.118.87.124 - INFO - ✅ ElastiCache async client connected to clustercfg.h9vv-ccs-cache-np-w1.is3heo.usw2.cache.amazonaws.com:6379
+2025-11-26 22:56:06 - ccs-websocket-10.118.87.124 - INFO - Max connections: 50, SSL: enabled, Health check: 30s
+2025-11-26 22:56:07 - ccs-websocket-10.118.87.124 - INFO - Health check - Cache sessions: ~0, Local sessions: 0, Connected: True, Circuit breaker: CLOSED
+2025-11-26 22:56:08 - ccs-websocket-10.118.87.124 - INFO - Health check - Cache sessions: ~0, Local sessions: 0, Connected: True, Circuit breaker: CLOSED
+2025-11-26 22:56:10 - ccs-websocket-10.118.87.124 - INFO - Client authenticated and connected: socket_139746632715904 (auth: jwt, env: NONPROD, uisource: None)
+2025-11-26 22:56:10 - ccs-websocket-10.118.87.124 - WARNING - ⚠️ Attempt 1 failed: 5424 h9vv-ccs-cache-np-w1-0001-001.h9vv-ccs-cache-np-w1.is3heo.usw2.cache.amazonaws.com:6379, retrying in 0.10s
+2025-11-26 22:56:10 - ccs-websocket-10.118.87.124 - WARNING - ⚠️ Attempt 2 failed: 5424 h9vv-ccs-cache-np-w1-0001-001.h9vv-ccs-cache-np-w1.is3heo.usw2.cache.amazonaws.com:6379, retrying in 0.19s
+2025-11-26 22:56:10 - ccs-websocket-10.118.87.124 - WARNING - ⚠️ Attempt 3 failed: 5424 h9vv-ccs-cache-np-w1-0001-001.h9vv-ccs-cache-np-w1.is3heo.usw2.cache.amazonaws.com:6379, retrying in 0.39s
+2025-11-26 22:56:10 - ccs-websocket-10.118.87.124 - WARNING - ❌ Circuit breaker: CLOSED -> OPEN (failures: 3)
+2025-11-26 22:56:10 - ccs-websocket-10.118.87.124 - ERROR - ❌ All 4 attempts failed: 5424 h9vv-ccs-cache-np-w1-0001-001.h9vv-ccs-cache-np-w1.is3heo.usw2.cache.amazonaws.com:6379
+2025-11-26 22:56:10 - ccs-websocket-10.118.87.124 - INFO - Session registered efficiently: ccs81ae7d58-36f6-43fd-bc28-4ed66e3e5a47dfw (env: NONPROD, uisource: default)
+2025-11-26 22:56:11 - ccs-websocket-10.118.87.124 - INFO - *** SAFE EMIT START - Session: ccs81ae7d58-36f6-43fd-bc28-4ed66e3e5a47dfw, Event: chat_started ***
+2025-11-26 22:56:11 - ccs-websocket-10.118.87.124 - INFO - Local WebSocket found: True
+2025-11-26 22:56:11 - ccs-websocket-10.118.87.124 - INFO - 📍 Session ccs81ae7d58-36f6-43fd-bc28-4ed66e3e5a47dfw found locally on server_10.118.87.124_3003
+2025-11-26 22:56:11 - ccs-websocket-10.118.87.124 - INFO - ✅ LOCAL EMIT SUCCESS for session ccs81ae7d58-36f6-43fd-bc28-4ed66e3e5a47dfw
+2025-11-26 22:56:11 - ccs-websocket-10.118.87.124 - INFO - Making API call for session ccs81ae7d58-36f6-43fd-bc28-4ed66e3e5a47dfw
+2025-11-26 22:56:11 - ccs-websocket-10.118.87.124 - INFO - API call initiated efficiently for session ccs81ae7d58-36f6-43fd-bc28-4ed66e3e5a47dfw
+2025-11-26 22:56:11 - ccs-websocket-10.118.87.124 - INFO - Including Authorization header in fulfillment API call for session ccs81ae7d58-36f6-43fd-bc28-4ed66e3e5a47dfw
